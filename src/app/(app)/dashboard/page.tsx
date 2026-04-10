@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { choreoRepo } from '@/lib/supabase/choreoRepo';
+import { choreoRepoServer } from '@/lib/supabase/choreoRepo.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,7 @@ export default async function DashboardPage({
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const items = await choreoRepo.listForUser(user.id);
+  const items = await choreoRepoServer.listForUser(user.id);
   const { error } = await searchParams;
 
   return (

@@ -1,9 +1,12 @@
 'use client';
 
+import type { Formation } from '@/domain/choreo';
 import { useEditorStore } from '@/store/editorStore';
 
+const EMPTY_FORMATIONS: Formation[] = [];
+
 export function FormationList() {
-  const formations = useEditorStore((s) => s.choreo?.formations ?? []);
+  const formations = useEditorStore((s) => s.choreo?.formations ?? EMPTY_FORMATIONS);
   const current = useEditorStore((s) => s.currentFormationId);
   const select = useEditorStore((s) => s.selectFormation);
   const add = useEditorStore((s) => s.addFormation);
@@ -18,6 +21,7 @@ export function FormationList() {
           + Add
         </button>
       </div>
+
       <ol className="space-y-1">
         {formations.map((f) => (
           <li key={f.id}>
@@ -32,6 +36,7 @@ export function FormationList() {
               <span className="text-white/40 text-xs w-5 tabular-nums">{f.index + 1}</span>
               <span className="flex-1 truncate text-sm">{f.name}</span>
               <span className="text-xs text-white/40 tabular-nums">{f.timeSec.toFixed(1)}s</span>
+
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -42,6 +47,7 @@ export function FormationList() {
               >
                 ⎘
               </button>
+
               <button
                 onClick={(e) => {
                   e.stopPropagation();

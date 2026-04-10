@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { choreoRepo } from '@/lib/supabase/choreoRepo';
+import { choreoRepoServer } from '@/lib/supabase/choreoRepo.server';
 import { EditorShell } from '@/components/layout/EditorShell';
 
 export default async function EditorPage({
@@ -8,7 +8,7 @@ export default async function EditorPage({
   params: Promise<{ choreoId: string }>;
 }) {
   const { choreoId } = await params;
-  const choreo = await choreoRepo.get(choreoId);
+  const choreo = await choreoRepoServer.get(choreoId);
   if (!choreo) notFound();
   return <EditorShell initialChoreo={choreo} />;
 }

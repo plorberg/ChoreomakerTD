@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useEditorStore } from '@/store/editorStore';
-import { choreoRepo } from '@/lib/supabase/choreoRepo';
+import { choreoRepoClient } from '@/lib/supabase/choreoRepo.client';
 
 export function useAutoSave(debounceMs = 1500) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -16,7 +16,7 @@ export function useAutoSave(debounceMs = 1500) {
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(async () => {
           try {
-            await choreoRepo.saveFromClient(choreo);
+            await choreoRepoClient.save(choreo);
             useEditorStore.getState().markClean();
           } catch (e) {
             console.error('autosave failed', e);
@@ -37,8 +37,8 @@ export function useAutoSave(debounceMs = 1500) {
         e.preventDefault();
         const c = useEditorStore.getState().choreo;
         if (c) {
-          choreoRepo
-            .saveFromClient(c)
+          choreoRepoClient
+            .save(c)
             .then(() => useEditorStore.getState().markClean())
             .catch((err) => console.error(err));
         }
