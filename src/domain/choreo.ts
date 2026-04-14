@@ -81,8 +81,19 @@ export interface Performer {
 // ---------- Formation (a.k.a. "Picture") ----------
 
 export interface PerformerState {
-  position: Vec2;       // on the stage plane
-  rotationDeg: number;  // facing direction, 0 = +Y (upstage)
+  /** Position of the Leader (or the couple when merged). */
+  position: Vec2;
+  /** Facing direction in degrees, 0 = upstage. */
+  rotationDeg: number;
+  /**
+   * When set, the couple is SPLIT for this formation. The Leader sits at
+   * `position`, the Follower sits at `position + splitOffset`. When undefined
+   * or null, the couple is MERGED (rendered as a single token).
+   *
+   * This is per-formation, so a couple can be split in some formations and
+   * merged in others without duplicating performer identity.
+   */
+  splitOffset?: Vec2 | null;
 }
 
 export interface Formation {

@@ -28,6 +28,17 @@ type Interaction =
       pendingDelta: Vec2 | null;     // queued for next rAF
     }
   | {
+      kind: 'drag-follower';
+      pointerId: number;
+      performerId: string;
+      /** Stage point where the drag started. */
+      startStage: Vec2;
+      /** Original splitOffset when drag began. */
+      originOffset: Vec2;
+      lastDelta: Vec2;
+      pendingDelta: Vec2 | null;
+    }
+  | {
       kind: 'rotate-token';
       pointerId: number;
       performerId: string;
@@ -53,8 +64,10 @@ export function Stage2D() {
 
   const choreo = useEditorStore((s) => s.choreo);
   const selected = useEditorStore((s) => s.selectedPerformerIds);
+  const currentFormationId = useEditorStore((s) => s.currentFormationId);
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const moveSelectedBy = useEditorStore((s) => s.moveSelectedBy);
+  const moveFollowerBy = useEditorStore((s) => s.moveFollowerBy);
   const rotatePerformer = useEditorStore((s) => s.rotatePerformer);
   const selectPerformer = useEditorStore((s) => s.selectPerformer);
   const setSelection = useEditorStore((s) => s.setSelection);
@@ -117,29 +130,67 @@ export function Stage2D() {
   };
 
   // ---- Render data ------------------------------------------------------
-  const performers = useMemo(() => {
-    return choreo.performers
-      .map((p) => {
-        const st = states[p.id];
-        if (!st) return null;
-        const screen = stageToScreen(st.position.x, st.position.y);
-        return {
+  type Token = {
+    key: string;              // unique DOM key
+    performer: (typeof choreo.performers)[number];
+    role: 'leader' | 'follower' | 'solo';
+    x: number;
+    y: number;
+    stagePos: Vec2;            // absolute stage position
+    rotationDeg: number;
+    isSelected: boolean;
+  };
+
+  const tokens: Token[] = useMemo(() => {
+    const list: Token[] = [];
+    for (const p of choreo.performers) {
+      const st = states[p.id];
+      if (!st) continue;
+      const isSel = selected.includes(p.id);
+      if (st.splitOffset) {
+        // Split couple → leader at `position`, follower at position + offset
+        const leaderPos = st.position;
+        const followerPos = {
+          x: st.position.x + st.splitOffset.x,
+          y: st.position.y + st.splitOffset.y,
+        };
+        const ls = stageToScreen(leaderPos.x, leaderPos.y);
+        const fs = stageToScreen(followerPos.x, followerPos.y);
+        list.push({
+          key: `${p.id}:leader`,
           performer: p,
-          x: screen.x,
-          y: screen.y,
+          role: 'leader',
+          x: ls.x,
+          y: ls.y,
+          stagePos: leaderPos,
+          rotationDeg: st.rotationDeg,
+          isSelected: isSel,
+        });
+        list.push({
+          key: `${p.id}:follower`,
+          performer: p,
+          role: 'follower',
+          x: fs.x,
+          y: fs.y,
+          stagePos: followerPos,
+          rotationDeg: st.rotationDeg,
+          isSelected: isSel,
+        });
+      } else {
+        const scr = stageToScreen(st.position.x, st.position.y);
+        list.push({
+          key: p.id,
+          performer: p,
+          role: 'solo',
+          x: scr.x,
+          y: scr.y,
           stagePos: st.position,
           rotationDeg: st.rotationDeg,
-          isSelected: selected.includes(p.id),
-        };
-      })
-      .filter(Boolean) as Array<{
-      performer: (typeof choreo.performers)[number];
-      x: number;
-      y: number;
-      stagePos: Vec2;
-      rotationDeg: number;
-      isSelected: boolean;
-    }>;
+          isSelected: isSel,
+        });
+      }
+    }
+    return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [choreo.performers, selected, states, offsetX, offsetY, pxPerMeter]);
 
@@ -149,6 +200,9 @@ export function Stage2D() {
     const it = interactionRef.current;
     if (it.kind === 'drag-tokens' && it.pendingDelta) {
       moveSelectedBy(it.pendingDelta);
+      it.pendingDelta = null;
+    } else if (it.kind === 'drag-follower' && it.pendingDelta) {
+      moveFollowerBy(it.performerId, it.pendingDelta);
       it.pendingDelta = null;
     } else if (it.kind === 'marquee') {
       // Force re-render so the marquee rectangle updates
@@ -230,6 +284,39 @@ export function Stage2D() {
     captureOnRoot(e.pointerId);
   };
 
+  // ---- Follower pointer down --------------------------------------------
+  const handleFollowerPointerDown = (
+    e: React.PointerEvent<SVGGElement>,
+    performerId: string,
+  ) => {
+    e.stopPropagation();
+    if (isPlaying) return;
+
+    // Selecting the couple (not creating a separate "follower" selection) —
+    // selection stays at the performer level.
+    if (!selected.includes(performerId)) {
+      selectPerformer(performerId, e.shiftKey);
+    }
+
+    const f = choreo.formations.find(
+      (x) => x.id === useEditorStore.getState().currentFormationId,
+    );
+    if (!f) return;
+    const st = f.states[performerId];
+    if (!st || !st.splitOffset) return;
+
+    interactionRef.current = {
+      kind: 'drag-follower',
+      pointerId: e.pointerId,
+      performerId,
+      startStage: getStagePoint(e),
+      originOffset: { ...st.splitOffset },
+      lastDelta: { x: 0, y: 0 },
+      pendingDelta: null,
+    };
+    captureOnRoot(e.pointerId);
+  };
+
   // ---- Rotation handle pointer down -------------------------------------
   const handleRotationPointerDown = (
     e: React.PointerEvent<SVGCircleElement>,
@@ -290,12 +377,57 @@ export function Stage2D() {
         ? { x: it.pendingDelta.x + incremental.x, y: it.pendingDelta.y + incremental.y }
         : incremental;
       queueRaf();
+    } else if (it.kind === 'drag-follower') {
+      const current = getStagePoint(e);
+      let totalDelta = {
+        x: current.x - it.startStage.x,
+        y: current.y - it.startStage.y,
+      };
+
+      // Snap: the follower's ABSOLUTE stage position snaps to the grid.
+      if (!e.shiftKey) {
+        // Origin absolute position = leader pos + origin offset.
+        // We only need the origin offset and the current leader pos to
+        // compute the follower's absolute origin.
+        const f = choreo.formations.find((x) => x.id === useEditorStore.getState().currentFormationId);
+        const st = f?.states[it.performerId];
+        if (st) {
+          const originAbs = {
+            x: st.position.x + it.originOffset.x,
+            y: st.position.y + it.originOffset.y,
+          };
+          const half = stageMeters / 2;
+          const targetX = clamp(originAbs.x + totalDelta.x, -half, half);
+          const targetY = clamp(originAbs.y + totalDelta.y, -half, half);
+          const snappedX = Math.round(targetX / SNAP_M) * SNAP_M;
+          const snappedY = Math.round(targetY / SNAP_M) * SNAP_M;
+          totalDelta = {
+            x: snappedX - originAbs.x,
+            y: snappedY - originAbs.y,
+          };
+        }
+      }
+
+      const incremental = {
+        x: totalDelta.x - it.lastDelta.x,
+        y: totalDelta.y - it.lastDelta.y,
+      };
+      if (incremental.x === 0 && incremental.y === 0) return;
+      it.lastDelta = totalDelta;
+      it.pendingDelta = it.pendingDelta
+        ? { x: it.pendingDelta.x + incremental.x, y: it.pendingDelta.y + incremental.y }
+        : incremental;
+      queueRaf();
     } else if (it.kind === 'rotate-token') {
       const current = getStagePoint(e);
       // 0° points "up" (–y on stage). atan2 in screen-space.
       const dx = current.x - it.center.x;
       const dy = current.y - it.center.y;
-      const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+      let deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+      // Snap to 45° increments unless Shift is held for free rotation
+      if (!e.shiftKey) {
+        deg = Math.round(deg / 45) * 45;
+      }
       rotatePerformer(it.performerId, deg);
     } else if (it.kind === 'marquee') {
       it.currentScreen = getScreenPoint(e);
@@ -318,6 +450,10 @@ export function Stage2D() {
       moveSelectedBy(it.pendingDelta);
     }
 
+    if (it.kind === 'drag-follower' && it.pendingDelta) {
+      moveFollowerBy(it.performerId, it.pendingDelta);
+    }
+
     if (it.kind === 'marquee') {
       // Commit selection by hit-testing against marquee rect
       const x1 = Math.min(it.startScreen.x, it.currentScreen.x);
@@ -326,9 +462,13 @@ export function Stage2D() {
       const y2 = Math.max(it.startScreen.y, it.currentScreen.y);
       // Treat tiny marquees as a click → don't change selection
       if (x2 - x1 > 4 || y2 - y1 > 4) {
-        const hits = performers
-          .filter((p) => p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2)
-          .map((p) => p.performer.id);
+        const hits = Array.from(
+          new Set(
+            tokens
+              .filter((t) => t.x >= x1 && t.x <= x2 && t.y >= y1 && t.y <= y2)
+              .map((t) => t.performer.id),
+          ),
+        );
         if (e.shiftKey) {
           const next = Array.from(new Set([...selected, ...hits]));
           setSelection(next);
@@ -506,17 +646,83 @@ export function Stage2D() {
           </text>
         </g>
 
+        <g pointerEvents="none">
+          {/* Transition paths from the previous formation → current position.
+              Shows each performer's move as a thin colored line. */}
+          {(() => {
+            if (!currentFormationId || isPlaying) return null;
+            const sorted = [...choreo.formations].sort((a, b) => a.timeSec - b.timeSec);
+            const idx = sorted.findIndex((x) => x.id === currentFormationId);
+            if (idx <= 0) return null;
+            const prev = sorted[idx - 1];
+            const current = sorted[idx];
+            return choreo.performers.map((p) => {
+              const a = prev.states[p.id];
+              const b = current.states[p.id];
+              if (!a || !b) return null;
+              const from = stageToScreen(a.position.x, a.position.y);
+              const to = stageToScreen(b.position.x, b.position.y);
+              const dx = to.x - from.x;
+              const dy = to.y - from.y;
+              if (dx * dx + dy * dy < 4) return null;
+              return (
+                <line
+                  key={`path-${p.id}`}
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  stroke={p.color}
+                  strokeWidth={1.5}
+                  opacity={0.5}
+                  strokeDasharray="2 3"
+                />
+              );
+            });
+          })()}
+        </g>
+
         <g>
-          {performers.map(({ performer, x, y, stagePos, rotationDeg, isSelected }) => {
-            // Position the rotation handle relative to the token, rotated by
-            // the performer's facing.
+          {/* Connector lines between Leader and Follower of split couples */}
+          {choreo.performers.map((p) => {
+            const st = states[p.id];
+            if (!st || !st.splitOffset) return null;
+            const leader = stageToScreen(st.position.x, st.position.y);
+            const follower = stageToScreen(
+              st.position.x + st.splitOffset.x,
+              st.position.y + st.splitOffset.y,
+            );
+            return (
+              <line
+                key={`connector-${p.id}`}
+                x1={leader.x}
+                y1={leader.y}
+                x2={follower.x}
+                y2={follower.y}
+                stroke={p.color}
+                strokeWidth={2}
+                strokeDasharray="2 3"
+                opacity={0.5}
+                pointerEvents="none"
+              />
+            );
+          })}
+
+          {tokens.map(({ key, performer, role, x, y, stagePos, rotationDeg, isSelected }) => {
             const rad = (rotationDeg * Math.PI) / 180;
             const handleX = x + Math.sin(rad) * ROTATION_HANDLE_DIST;
             const handleY = y - Math.cos(rad) * ROTATION_HANDLE_DIST;
+            const isFollower = role === 'follower';
+            const label = role === 'solo'
+              ? (performer.initials ?? '')
+              : role === 'leader'
+                ? `${performer.initials ?? ''}·L`
+                : `${performer.initials ?? ''}·F`;
             return (
-              <g key={performer.id}>
-                {/* Facing line: from token center toward the rotation handle */}
-                {isSelected && (
+              <g key={key}>
+                {/* Facing line: from token center toward the rotation handle.
+                    Only the leader/solo owns rotation. */}
+                {isSelected && !isFollower && (
                   <line
                     x1={x}
                     y1={y}
@@ -531,48 +737,77 @@ export function Stage2D() {
                 {/* Token group */}
                 <g
                   transform={`translate(${x}, ${y})`}
-                  onPointerDown={(e) => handleTokenPointerDown(e, performer.id)}
+                  onPointerDown={(e) =>
+                    isFollower
+                      ? handleFollowerPointerDown(e, performer.id)
+                      : handleTokenPointerDown(e, performer.id)
+                  }
                   style={{ cursor: isPlaying ? 'pointer' : 'grab' }}
                 >
-                  <circle
-                    r={TOKEN_R}
-                    fill={performer.color}
-                    stroke={isSelected ? '#ffffff' : '#1a1208'}
-                    strokeWidth={isSelected ? 3 : 2}
-                  />
-                  {isSelected && (
-                    <circle
-                      r={TOKEN_R + 4}
-                      fill="none"
-                      stroke="#ffffff"
-                      strokeWidth={1.5}
-                      opacity={0.6}
-                    />
+                  {/* Outer ring for follower — a hollow ring, not solid */}
+                  {isFollower ? (
+                    <>
+                      <circle
+                        r={TOKEN_R - 2}
+                        fill="none"
+                        stroke={performer.color}
+                        strokeWidth={4}
+                      />
+                      <circle
+                        r={TOKEN_R - 2}
+                        fill="none"
+                        stroke={isSelected ? '#ffffff' : '#1a1208'}
+                        strokeWidth={isSelected ? 2 : 1.5}
+                        strokeDasharray="3 2"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <circle
+                        r={TOKEN_R}
+                        fill={performer.color}
+                        stroke={isSelected ? '#ffffff' : '#1a1208'}
+                        strokeWidth={isSelected ? 3 : 2}
+                      />
+                      {isSelected && (
+                        <circle
+                          r={TOKEN_R + 4}
+                          fill="none"
+                          stroke="#ffffff"
+                          strokeWidth={1.5}
+                          opacity={0.6}
+                        />
+                      )}
+                      {/* Facing pip — only on solo/leader */}
+                      <circle
+                        cx={Math.sin(rad) * (TOKEN_R - 4)}
+                        cy={-Math.cos(rad) * (TOKEN_R - 4)}
+                        r={3}
+                        fill="#ffffff"
+                        opacity={0.85}
+                        pointerEvents="none"
+                      />
+                    </>
                   )}
-                  {/* Facing pip — small notch on the leading edge */}
-                  <circle
-                    cx={Math.sin(rad) * (TOKEN_R - 4)}
-                    cy={-Math.cos(rad) * (TOKEN_R - 4)}
-                    r={3}
-                    fill="#ffffff"
-                    opacity={0.85}
-                    pointerEvents="none"
-                  />
                   <text
                     x={0}
                     y={4}
                     textAnchor="middle"
-                    fontSize="12"
+                    fontSize={role === 'solo' ? 12 : 10}
                     fontWeight="700"
-                    fill="#ffffff"
+                    fill={isFollower ? performer.color : '#ffffff'}
                     pointerEvents="none"
-                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}
+                    style={{
+                      textShadow: isFollower
+                        ? '0 1px 2px rgba(255,255,255,0.8)'
+                        : '0 1px 2px rgba(0,0,0,0.6)',
+                    }}
                   >
-                    {performer.initials ?? ''}
+                    {label}
                   </text>
                 </g>
-                {/* Rotation handle (only when selected) */}
-                {isSelected && !isPlaying && (
+                {/* Rotation handle — only on leader/solo, not follower */}
+                {isSelected && !isPlaying && !isFollower && (
                   <circle
                     cx={handleX}
                     cy={handleY}

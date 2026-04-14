@@ -44,8 +44,13 @@ interface EditorState {
   renamePerformer: (id: string, name: string) => void;
   setPerformerColor: (id: string, color: string) => void;
   movePerformer: (performerId: string, pos: Vec2) => void;
+  moveFollowerBy: (performerId: string, delta: Vec2) => void;
   moveSelectedBy: (delta: Vec2) => void;
   rotatePerformer: (performerId: string, deg: number) => void;
+  rotateSelectedBy: (deltaDeg: number) => void;
+  splitCouple: (performerId: string) => void;
+  mergeCouple: (performerId: string) => void;
+  toggleCoupleSplit: (performerId: string) => void;
   selectPerformer: (id: string, additive?: boolean) => void;
   setSelection: (ids: string[]) => void;
   clearSelection: () => void;
@@ -64,6 +69,10 @@ const PALETTE = [
 ];
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+const normalizeDeg = (d: number) => {
+  const r = d % 360;
+  return r < 0 ? r + 360 : r;
+};
 
 /**
  * `temporal` (zundo) wraps the store to provide undo/redo history.
@@ -294,7 +303,75 @@ export const useEditorStore = create<EditorState>()(
             const f = s.choreo?.formations.find((x) => x.id === s.currentFormationId);
             if (!f) return;
             const st = f.states[performerId];
-            if (st) st.rotationDeg = deg;
+            if (st) st.rotationDeg = normalizeDeg(deg);
+            s.dirty = true;
+          }),
+
+        rotateSelectedBy: (deltaDeg) =>
+          set((s) => {
+            const f = s.choreo?.formations.find((x) => x.id === s.currentFormationId);
+            if (!f) return;
+            for (const id of s.selectedPerformerIds) {
+              const st = f.states[id];
+              if (!st) continue;
+              st.rotationDeg = normalizeDeg(st.rotationDeg + deltaDeg);
+            }
+            s.dirty = true;
+          }),
+
+        /** Move the Follower half of a split couple (adjusts splitOffset). */
+        moveFollowerBy: (performerId, delta) =>
+          set((s) => {
+            if (!s.choreo) return;
+            const f = s.choreo.formations.find((x) => x.id === s.currentFormationId);
+            if (!f) return;
+            const st = f.states[performerId];
+            if (!st || !st.splitOffset) return;
+            const half = s.choreo.stage.width / 2;
+            // Clamp the absolute follower position, then derive the new offset.
+            const nextAbsX = clamp(st.position.x + st.splitOffset.x + delta.x, -half, half);
+            const nextAbsY = clamp(st.position.y + st.splitOffset.y + delta.y, -half, half);
+            st.splitOffset = {
+              x: nextAbsX - st.position.x,
+              y: nextAbsY - st.position.y,
+            };
+            s.dirty = true;
+          }),
+
+        /** Split a couple in the CURRENT formation only. */
+        splitCouple: (performerId) =>
+          set((s) => {
+            const f = s.choreo?.formations.find((x) => x.id === s.currentFormationId);
+            if (!f) return;
+            const st = f.states[performerId];
+            if (!st || st.splitOffset) return; // already split
+            // Default offset: Follower stands 0.5m to the right of Leader.
+            st.splitOffset = { x: 0.5, y: 0 };
+            s.dirty = true;
+          }),
+
+        /** Merge a split couple in the CURRENT formation only. */
+        mergeCouple: (performerId) =>
+          set((s) => {
+            const f = s.choreo?.formations.find((x) => x.id === s.currentFormationId);
+            if (!f) return;
+            const st = f.states[performerId];
+            if (!st || !st.splitOffset) return;
+            st.splitOffset = null;
+            s.dirty = true;
+          }),
+
+        toggleCoupleSplit: (performerId) =>
+          set((s) => {
+            const f = s.choreo?.formations.find((x) => x.id === s.currentFormationId);
+            if (!f) return;
+            const st = f.states[performerId];
+            if (!st) return;
+            if (st.splitOffset) {
+              st.splitOffset = null;
+            } else {
+              st.splitOffset = { x: 0.5, y: 0 };
+            }
             s.dirty = true;
           }),
 

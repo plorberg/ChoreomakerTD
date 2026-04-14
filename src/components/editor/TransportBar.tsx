@@ -72,6 +72,20 @@ export function TransportBar() {
         e.preventDefault();
         const remove = useEditorStore.getState().removePerformer;
         for (const id of sel) remove(id);
+      } else if (e.key === 'r' || e.key === 'R') {
+        const sel = useEditorStore.getState().selectedPerformerIds;
+        if (sel.length === 0) return;
+        e.preventDefault();
+        // R = +45°, Shift+R = -45°
+        useEditorStore.getState().rotateSelectedBy(e.shiftKey ? -45 : 45);
+      } else if (e.key === 's' || e.key === 'S') {
+        // Ignore ⌘S / Ctrl+S (that's save — leave it to the browser)
+        if (e.metaKey || e.ctrlKey) return;
+        const sel = useEditorStore.getState().selectedPerformerIds;
+        if (sel.length === 0) return;
+        e.preventDefault();
+        const toggle = useEditorStore.getState().toggleCoupleSplit;
+        for (const id of sel) toggle(id);
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         useEditorStore.temporal.getState().undo();

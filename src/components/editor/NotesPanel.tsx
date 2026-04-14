@@ -73,6 +73,8 @@ export function NotesPanel() {
         and ends at <span className="tabular-nums">{formatTimeInput(formation.timeSec)}</span>.
       </p>
 
+      <SplitMergeSection />
+
       <label className="block text-xs text-white/60">
         Notes
         <textarea
@@ -83,6 +85,69 @@ export function NotesPanel() {
           onChange={(e) => update(formation.id, { notes: e.target.value })}
         />
       </label>
+    </div>
+  );
+}
+
+function SplitMergeSection() {
+  const selected = useEditorStore((s) => s.selectedPerformerIds);
+  const formation = useCurrentFormation();
+  const toggle = useEditorStore((s) => s.toggleCoupleSplit);
+  const split = useEditorStore((s) => s.splitCouple);
+  const merge = useEditorStore((s) => s.mergeCouple);
+
+  if (!formation || selected.length === 0) {
+    return (
+      <div className="border-t border-border pt-3">
+        <h3 className="text-xs uppercase tracking-wider text-white/50 mb-1">Couple split</h3>
+        <p className="text-[10px] text-white/40">Select a couple to split / merge.</p>
+      </div>
+    );
+  }
+
+  // Determine current split state across selection
+  const selectedStates = selected.map((id) => formation.states[id]).filter(Boolean);
+  const allSplit = selectedStates.every((st) => st.splitOffset);
+  const noneSplit = selectedStates.every((st) => !st.splitOffset);
+
+  return (
+    <div className="border-t border-border pt-3">
+      <h3 className="text-xs uppercase tracking-wider text-white/50 mb-2">Couple split</h3>
+      <div className="flex gap-2">
+        <button
+          onClick={() => {
+            for (const id of selected) split(id);
+          }}
+          disabled={allSplit}
+          className="flex-1 text-xs px-2 py-1.5 rounded border border-border hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Split selected couples into Leader + Follower (this formation only)"
+        >
+          Split
+        </button>
+        <button
+          onClick={() => {
+            for (const id of selected) merge(id);
+          }}
+          disabled={noneSplit}
+          className="flex-1 text-xs px-2 py-1.5 rounded border border-border hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Merge Leader + Follower back into one token"
+        >
+          Merge
+        </button>
+        <button
+          onClick={() => {
+            for (const id of selected) toggle(id);
+          }}
+          className="text-xs px-2 py-1.5 rounded border border-border hover:border-accent"
+          title="Toggle split (keyboard: S)"
+        >
+          Toggle
+        </button>
+      </div>
+      <p className="text-[10px] text-white/40 mt-1.5">
+        Shortcut: press <kbd className="px-1 rounded bg-border/50 text-white/60">S</kbd> to toggle,
+        <kbd className="px-1 rounded bg-border/50 text-white/60 ml-1">R</kbd> to rotate 45°.
+      </p>
     </div>
   );
 }

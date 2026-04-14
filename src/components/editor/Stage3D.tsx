@@ -34,20 +34,58 @@ export function Stage3D() {
         {choreo.performers.map((p) => {
           const st = states[p.id];
           if (!st) return null;
+          const leaderPos: [number, number, number] = [st.position.x, 0, st.position.y];
+          const leaderRot: [number, number, number] = [
+            0,
+            -(st.rotationDeg * Math.PI) / 180,
+            0,
+          ];
           return (
-            <group
-              key={p.id}
-              position={[st.position.x, 0, st.position.y]}
-              rotation={[0, -(st.rotationDeg * Math.PI) / 180, 0]}
-            >
-              <mesh position={[0, 0.9, 0]} castShadow>
-                <cylinderGeometry args={[0.25, 0.25, 1.8, 16]} />
-                <meshStandardMaterial color={p.color} />
-              </mesh>
-              <mesh position={[0, 2.0, 0]} castShadow>
-                <sphereGeometry args={[0.22, 16, 16]} />
-                <meshStandardMaterial color={p.color} />
-              </mesh>
+            <group key={p.id}>
+              {/* Leader / solo body */}
+              <group position={leaderPos} rotation={leaderRot}>
+                <mesh position={[0, 0.9, 0]} castShadow>
+                  <cylinderGeometry args={[0.25, 0.25, 1.8, 16]} />
+                  <meshStandardMaterial color={p.color} />
+                </mesh>
+                <mesh position={[0, 2.0, 0]} castShadow>
+                  <sphereGeometry args={[0.22, 16, 16]} />
+                  <meshStandardMaterial color={p.color} />
+                </mesh>
+              </group>
+
+              {/* Follower when split — hollow/lighter variant */}
+              {st.splitOffset && (
+                <group
+                  position={[
+                    st.position.x + st.splitOffset.x,
+                    0,
+                    st.position.y + st.splitOffset.y,
+                  ]}
+                  rotation={leaderRot}
+                >
+                  <mesh position={[0, 0.9, 0]} castShadow>
+                    <cylinderGeometry args={[0.22, 0.22, 1.7, 16]} />
+                    <meshStandardMaterial
+                      color={p.color}
+                      emissive={p.color}
+                      emissiveIntensity={0.3}
+                      transparent
+                      opacity={0.75}
+                    />
+                  </mesh>
+                  <mesh position={[0, 1.95, 0]} castShadow>
+                    <sphereGeometry args={[0.2, 16, 16]} />
+                    <meshStandardMaterial
+                      color={p.color}
+                      emissive={p.color}
+                      emissiveIntensity={0.3}
+                      transparent
+                      opacity={0.75}
+                    />
+                  </mesh>
+                </group>
+              )}
             </group>
           );
         })}
