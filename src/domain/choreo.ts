@@ -55,8 +55,13 @@ export interface Entitlements {
 // ---------- Stage ----------
 
 export interface Stage {
-  width: number;   // meters
-  height: number;  // meters (stage depth)
+  /**
+   * Stage edge length in meters. The stage is always square — `width` and
+   * `height` are kept equal by the editor and migrations.
+   * (Both fields exist for back-compat with persisted records.)
+   */
+  width: number;
+  height: number;
   shape: 'rect' | 'circle';
   backgroundColor?: string;
 }
@@ -84,13 +89,18 @@ export interface Formation {
   id: ID;
   index: number;                 // order in the choreography
   name: string;
-  /** Time in seconds from start of the audio track when this formation is hit. */
+  /** Absolute time in seconds when this formation must be reached. */
   timeSec: Seconds;
+  /**
+   * Duration of the transition INTO this formation.
+   * Movement starts at (timeSec - transitionSec); before that, performers
+   * stay at the previous formation. Defaults to 2s when missing.
+   */
+  transitionSec?: Seconds;
   /** Per-performer state keyed by performer id. Performers missing = absent. */
   states: Record<ID, PerformerState>;
   notes: string;                 // markdown allowed
   counts?: number;               // musical counts (e.g. 8)
-  transitionMs?: number;         // blend duration to reach this formation
 }
 
 // ---------- Audio ----------
@@ -132,19 +142,65 @@ export interface Choreography {
 
 import { v4 as uuid } from 'uuid';
 
-export const createEmptyChoreography = (ownerId: ID, title = 'Untitled'): Choreography => ({
-  id: uuid(),
-  ownerId,
-  title,
-  stage: { width: 12, height: 10, shape: 'rect', backgroundColor: '#1a1d24' },
-  performers: [],
-  formations: [createEmptyFormation(0, 'Opening')],
-  audio: null,
-  cues: [],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  schemaVersion: 1,
-});
+// Eight evenly spaced colors around the hue circle for the default couples.
+const DEFAULT_COUPLE_COLORS = [
+  '#7c5cff', // purple
+  '#ff5c8a', // pink
+  '#5cffc5', // mint
+  '#ffd65c', // amber
+  '#5cb6ff', // sky
+  '#ff8a5c', // coral
+  '#b85cff', // violet
+  '#5cff8a', // green
+];
+
+export const createEmptyChoreography = (ownerId: ID, title = 'Untitled'): Choreography => {
+  const id = uuid();
+  const stage: Stage = { width: 16, height: 16, shape: 'rect', backgroundColor: '#c89968' };
+
+  // Seed 8 couples in a single row, evenly spaced across the stage width,
+  // a little in front of center so they're clearly visible to the audience.
+  const performers: Performer[] = Array.from({ length: 8 }, (_, i) => {
+    const name = `Couple ${i + 1}`;
+    return {
+      id: uuid(),
+      name,
+      kind: 'dancer',
+      color: DEFAULT_COUPLE_COLORS[i],
+      initials: `C${i + 1}`,
+    };
+  });
+
+  // Row layout: span 70% of the stage width, centered at y = 1 (slightly downstage).
+  const span = stage.width * 0.7;
+  const step = span / (performers.length - 1);
+  const startX = -span / 2;
+  const rowY = 1;
+  const positions: Record<ID, PerformerState> = {};
+  performers.forEach((p, i) => {
+    positions[p.id] = {
+      position: { x: Math.round((startX + step * i) * 2) / 2, y: rowY },
+      rotationDeg: 0,
+    };
+  });
+
+  const opening = createEmptyFormation(0, 'Opening');
+  opening.states = positions;
+
+  return {
+    id,
+    ownerId,
+    title,
+    stage,
+    performers,
+    formations: [opening],
+    audio: null,
+    cues: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    schemaVersion: 1,
+  };
+};
 
 export const createEmptyFormation = (index: number, name = `Formation ${index + 1}`): Formation => ({
   id: uuid(),
@@ -154,7 +210,7 @@ export const createEmptyFormation = (index: number, name = `Formation ${index + 
   states: {},
   notes: '',
   counts: 8,
-  transitionMs: 2000,
+  transitionSec: 2,
 });
 
 export const createPerformer = (name: string, color = '#7c5cff'): Performer => ({

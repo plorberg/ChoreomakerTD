@@ -11,7 +11,6 @@ import {
   type PerformerState,
   type Vec2,
   createEmptyFormation,
-  createPerformer,
 } from '@/domain/choreo';
 
 type ViewMode = '2d' | '3d' | 'split';
@@ -37,24 +36,34 @@ interface EditorState {
   reorderFormations: (fromIdx: number, toIdx: number) => void;
   updateFormationMeta: (
     id: string,
-    patch: Partial<Pick<Formation, 'name' | 'notes' | 'timeSec' | 'counts' | 'transitionMs'>>,
+    patch: Partial<Pick<Formation, 'name' | 'notes' | 'timeSec' | 'counts' | 'transitionSec'>>,
   ) => void;
 
   addPerformer: (name?: string) => void;
   removePerformer: (id: string) => void;
+  renamePerformer: (id: string, name: string) => void;
+  setPerformerColor: (id: string, color: string) => void;
   movePerformer: (performerId: string, pos: Vec2) => void;
+  moveSelectedBy: (delta: Vec2) => void;
   rotatePerformer: (performerId: string, deg: number) => void;
   selectPerformer: (id: string, additive?: boolean) => void;
+  setSelection: (ids: string[]) => void;
   clearSelection: () => void;
 
   setAudio: (audio: Choreography['audio']) => void;
+  updateStage: (patch: Partial<Choreography['stage']>) => void;
 
   play: () => void;
   pause: () => void;
   setPlayhead: (sec: number) => void;
 }
 
-const PALETTE = ['#7c5cff', '#ff5c8a', '#5cffc5', '#ffd65c', '#5cb6ff', '#ff8a5c'];
+const PALETTE = [
+  '#7c5cff', '#ff5c8a', '#5cffc5', '#ffd65c',
+  '#5cb6ff', '#ff8a5c', '#b85cff', '#5cff8a',
+];
+
+const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
  * `temporal` (zundo) wraps the store to provide undo/redo history.
@@ -75,9 +84,24 @@ export const useEditorStore = create<EditorState>()(
 
         load: (c) =>
           set((s) => {
-            s.choreo = c;
-            s.currentFormationId = c.formations[0]?.id ?? null;
-            s.playheadSec = c.formations[0]?.timeSec ?? 0;
+            // Migration: old records may carry transitionMs (number, milliseconds).
+            // Also: stage may have been rectangular (12×10). Force square by
+            // taking the larger dimension.
+            const stageSide = Math.round(Math.max(c.stage.width, c.stage.height));
+            const migrated = {
+              ...c,
+              stage: { ...c.stage, width: stageSide, height: stageSide },
+              formations: c.formations.map((f) => {
+                const legacy = f as Formation & { transitionMs?: number };
+                if (legacy.transitionMs != null && f.transitionSec == null) {
+                  return { ...f, transitionSec: legacy.transitionMs / 1000 };
+                }
+                return f;
+              }),
+            };
+            s.choreo = migrated;
+            s.currentFormationId = migrated.formations[0]?.id ?? null;
+            s.playheadSec = migrated.formations[0]?.timeSec ?? 0;
             s.dirty = false;
           }),
         markClean: () =>
@@ -166,16 +190,48 @@ export const useEditorStore = create<EditorState>()(
           set((s) => {
             if (!s.choreo) return;
             const i = s.choreo.performers.length;
-            const p: Performer = createPerformer(
-              name ?? `Dancer ${i + 1}`,
-              PALETTE[i % PALETTE.length],
-            );
+
+            // Auto-generate "Couple N" by finding the lowest unused number.
+            let autoName = name;
+            if (!autoName) {
+              const usedNumbers = new Set<number>();
+              for (const p of s.choreo.performers) {
+                const m = /^Couple\s+(\d+)$/.exec(p.name);
+                if (m) usedNumbers.add(parseInt(m[1], 10));
+              }
+              let n = 1;
+              while (usedNumbers.has(n)) n++;
+              autoName = `Couple ${n}`;
+            }
+
+            const color = PALETTE[i % PALETTE.length];
+            const p: Performer = {
+              id: crypto.randomUUID(),
+              name: autoName,
+              kind: 'dancer',
+              color,
+              initials: autoName.startsWith('Couple ')
+                ? `C${autoName.slice(7)}`
+                : autoName.trim().slice(0, 2).toUpperCase(),
+            };
             s.choreo.performers.push(p);
-            // Seed position in EVERY formation so the dancer exists everywhere
+
+            // Seed position in EVERY formation: place in a row to the right
+            // of existing performers, snapped to 0.5m, clamped to stage.
+            const half = s.choreo.stage.width / 2;
             for (const f of s.choreo.formations) {
               const n = Object.keys(f.states).length;
+              // Continue the "row" layout from createEmptyChoreography.
+              const span = s.choreo.stage.width * 0.7;
+              const step = span / 7;
+              const startX = -span / 2;
+              const rawX = startX + step * n;
+              const snappedX = Math.round(rawX / 0.5) * 0.5;
               f.states[p.id] = {
-                position: { x: ((n % 5) - 2) * 1.2, y: Math.floor(n / 5) * 1.2 - 2 },
+                position: {
+                  x: clamp(snappedX, -half, half),
+                  y: 1,
+                },
                 rotationDeg: 0,
               };
             }
@@ -190,6 +246,23 @@ export const useEditorStore = create<EditorState>()(
             s.dirty = true;
           }),
 
+        renamePerformer: (id, name) =>
+          set((s) => {
+            const p = s.choreo?.performers.find((x) => x.id === id);
+            if (!p) return;
+            p.name = name;
+            p.initials = name.trim().slice(0, 2).toUpperCase();
+            s.dirty = true;
+          }),
+
+        setPerformerColor: (id, color) =>
+          set((s) => {
+            const p = s.choreo?.performers.find((x) => x.id === id);
+            if (!p) return;
+            p.color = color;
+            s.dirty = true;
+          }),
+
         movePerformer: (performerId, pos) =>
           set((s) => {
             const f = s.choreo?.formations.find((x) => x.id === s.currentFormationId);
@@ -197,6 +270,22 @@ export const useEditorStore = create<EditorState>()(
             const st: PerformerState = f.states[performerId] ?? { position: pos, rotationDeg: 0 };
             st.position = pos;
             f.states[performerId] = st;
+            s.dirty = true;
+          }),
+
+        moveSelectedBy: (delta) =>
+          set((s) => {
+            if (!s.choreo) return;
+            const f = s.choreo.formations.find((x) => x.id === s.currentFormationId);
+            if (!f) return;
+            const half = s.choreo.stage.width / 2;
+            for (const id of s.selectedPerformerIds) {
+              const st = f.states[id];
+              if (!st) continue;
+              const nx = clamp(st.position.x + delta.x, -half, half);
+              const ny = clamp(st.position.y + delta.y, -half, half);
+              st.position = { x: nx, y: ny };
+            }
             s.dirty = true;
           }),
 
@@ -220,6 +309,11 @@ export const useEditorStore = create<EditorState>()(
             }
           }),
 
+        setSelection: (ids) =>
+          set((s) => {
+            s.selectedPerformerIds = ids;
+          }),
+
         clearSelection: () =>
           set((s) => {
             s.selectedPerformerIds = [];
@@ -229,6 +323,25 @@ export const useEditorStore = create<EditorState>()(
           set((s) => {
             if (!s.choreo) return;
             s.choreo.audio = audio;
+            s.dirty = true;
+          }),
+
+        updateStage: (patch) =>
+          set((s) => {
+            if (!s.choreo) return;
+            // Always keep the stage square AND integer-sized so the meter
+            // grid lines fall on whole numbers.
+            const next = { ...s.choreo.stage, ...patch };
+            if (patch.width != null) {
+              const w = Math.round(patch.width);
+              next.width = w;
+              next.height = w;
+            } else if (patch.height != null) {
+              const h = Math.round(patch.height);
+              next.width = h;
+              next.height = h;
+            }
+            s.choreo.stage = next;
             s.dirty = true;
           }),
 

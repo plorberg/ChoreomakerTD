@@ -19,16 +19,16 @@ export function Stage3D() {
         <Grid
           args={[choreo.stage.width, choreo.stage.height]}
           cellSize={1}
-          sectionSize={5}
-          cellColor="#2b3140"
-          sectionColor="#3a4150"
+          sectionSize={3}
+          cellColor="#a87a4a"
+          sectionColor="#5a3a1a"
           fadeDistance={40}
           infiniteGrid={false}
         />
 
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
           <planeGeometry args={[choreo.stage.width, choreo.stage.height]} />
-          <meshStandardMaterial color={choreo.stage.backgroundColor ?? '#1a1d24'} />
+          <meshStandardMaterial color={choreo.stage.backgroundColor ?? '#c89968'} />
         </mesh>
 
         {choreo.performers.map((p) => {

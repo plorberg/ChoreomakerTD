@@ -10,6 +10,7 @@ import { NotesPanel } from '@/components/editor/NotesPanel';
 import { TransportBar } from '@/components/editor/TransportBar';
 import { PerformerPanel } from '@/components/editor/PerformerPanel';
 import { AudioPanel } from '@/components/editor/AudioPanel';
+import { StagePanel } from '@/components/editor/StagePanel';
 
 const Stage2D = dynamic(() => import('@/components/editor/Stage2D').then((m) => m.Stage2D), {
   ssr: false,
@@ -66,6 +67,7 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
         >
           <FormationList />
           <PerformerPanel />
+          <StagePanel />
           <AudioPanel />
         </aside>
 

@@ -5,6 +5,7 @@ import { useEditorStore } from '@/store/editorStore';
 import { exportChoreoPdf } from '@/lib/pdf/ChoreoPdf';
 import { usePlaybackTick } from '@/hooks/usePlaybackTick';
 import { useAudioEngine } from '@/lib/audio/useAudioEngine';
+import { formatTime } from '@/lib/format/time';
 
 export function TransportBar() {
   const playing = useEditorStore((s) => s.isPlaying);
@@ -18,7 +19,7 @@ export function TransportBar() {
   useAudioEngine();
   usePlaybackTick();
 
-  // Global keyboard: space, arrows, ⌘Z / ⌘⇧Z
+  // Global keyboard: space, arrows (nudge or scrub), ⌘Z / ⌘⇧Z, Esc, Delete
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -27,10 +28,50 @@ export function TransportBar() {
       if (e.code === 'Space') {
         e.preventDefault();
         playing ? pause() : play();
-      } else if (e.key === 'ArrowLeft') {
-        setPlayhead(playhead - 1);
-      } else if (e.key === 'ArrowRight') {
-        setPlayhead(playhead + 1);
+        return;
+      }
+
+      // Arrow keys: if performers are selected, nudge them.
+      // Otherwise, scrub the playhead.
+      if (
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown'
+      ) {
+        const sel = useEditorStore.getState().selectedPerformerIds;
+        if (sel.length > 0) {
+          e.preventDefault();
+          // Coarse 0.5m by default, fine 0.1m with Shift
+          const step = e.shiftKey ? 0.1 : 0.5;
+          const dx =
+            e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+          // Up = upstage = negative y (screen-space), matches 2D convention
+          const dy =
+            e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+          useEditorStore.getState().moveSelectedBy({ x: dx, y: dy });
+          return;
+        }
+        // No selection → fall through to playhead scrub (only horizontal arrows)
+        if (e.key === 'ArrowLeft') {
+          setPlayhead(playhead - 1);
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          setPlayhead(playhead + 1);
+          return;
+        }
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        useEditorStore.getState().clearSelection();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        const sel = useEditorStore.getState().selectedPerformerIds;
+        if (sel.length === 0) return;
+        e.preventDefault();
+        const remove = useEditorStore.getState().removePerformer;
+        for (const id of sel) remove(id);
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         useEditorStore.temporal.getState().undo();
@@ -111,7 +152,7 @@ export function TransportBar() {
         />
 
         <span className="text-xs text-white/60 tabular-nums min-w-[90px] text-right">
-          {playhead.toFixed(1)}s / {duration.toFixed(1)}s
+          {formatTime(playhead)} / {formatTime(duration)}
         </span>
 
         <button
