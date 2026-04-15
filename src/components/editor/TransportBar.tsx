@@ -17,11 +17,9 @@ export function TransportBar() {
   const setPlaybackRate = useEditorStore((s) => s.setPlaybackRate);
   const choreo = useEditorStore((s) => s.choreo);
 
-  // Drive playback: audio if present, otherwise rAF loop
   useAudioEngine();
   usePlaybackTick();
 
-  // Global keyboard: space, arrows (nudge or scrub), ⌘Z / ⌘⇧Z, Esc, Delete
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -33,8 +31,6 @@ export function TransportBar() {
         return;
       }
 
-      // Arrow keys: if performers are selected, nudge them.
-      // Otherwise, scrub the playhead.
       if (
         e.key === 'ArrowLeft' ||
         e.key === 'ArrowRight' ||
@@ -44,17 +40,14 @@ export function TransportBar() {
         const sel = useEditorStore.getState().selectedPerformerIds;
         if (sel.length > 0) {
           e.preventDefault();
-          // Coarse 0.5m by default, fine 0.1m with Shift
           const step = e.shiftKey ? 0.1 : 0.5;
           const dx =
             e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
-          // Up = upstage = negative y (screen-space), matches 2D convention
           const dy =
             e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
           useEditorStore.getState().moveSelectedBy({ x: dx, y: dy });
           return;
         }
-        // No selection → fall through to playhead scrub (only horizontal arrows)
         if (e.key === 'ArrowLeft') {
           setPlayhead(playhead - 1);
           return;
@@ -78,10 +71,8 @@ export function TransportBar() {
         const sel = useEditorStore.getState().selectedPerformerIds;
         if (sel.length === 0) return;
         e.preventDefault();
-        // R = +45°, Shift+R = -45°
         useEditorStore.getState().rotateSelectedBy(e.shiftKey ? -45 : 45);
       } else if (e.key === 's' || e.key === 'S') {
-        // Ignore ⌘S / Ctrl+S (that's save — leave it to the browser)
         if (e.metaKey || e.ctrlKey) return;
         const sel = useEditorStore.getState().selectedPerformerIds;
         if (sel.length === 0) return;
@@ -107,12 +98,12 @@ export function TransportBar() {
     choreo.formations.reduce((m, f) => Math.max(m, f.timeSec), 0) + 4,
   );
 
+  const speedPercent = Math.round(playbackRate * 100);
+
   return (
     <div className="border-t border-border bg-panel">
-      {/* Timeline with formation markers */}
       <div className="relative h-8 px-4 pt-2">
         <div className="relative h-4 bg-bg border border-border rounded">
-          {/* Formation marker pins (numbered by chronological order) */}
           {[...choreo.formations]
             .sort((a, b) => a.timeSec - b.timeSec)
             .map((f, i) => {
@@ -127,7 +118,6 @@ export function TransportBar() {
                 />
               );
             })}
-          {/* Playhead */}
           <div
             className="absolute top-[-2px] bottom-[-2px] w-0.5 bg-white"
             style={{ left: `${(playhead / duration) * 100}%` }}
@@ -176,29 +166,36 @@ export function TransportBar() {
           {formatTime(playhead)} / {formatTime(duration)}
         </span>
 
-        {/* Speed control — fine-grained 90%–104% range for tempo tweaks
-            during practice. Double-click the label to reset to 100%. */}
         <div className="flex items-center gap-2 border-l border-border pl-3 ml-1">
-          <span
-            className="text-[10px] uppercase text-white/40 select-none cursor-pointer"
-            onDoubleClick={() => setPlaybackRate(1)}
-            title="Double-click to reset to 100%"
+          <button
+            type="button"
+            className="text-[10px] uppercase text-white/40 select-none hover:text-white/70"
+            onClick={() => setPlaybackRate(1)}
+            title="Reset speed to 100%"
           >
             Speed
-          </span>
+          </button>
           <input
             type="range"
-            min={0.9}
-            max={1.04}
+            min={0.5}
+            max={1.5}
             step={0.01}
             value={playbackRate}
-            onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
+            onChange={(e) => {
+              const next = parseFloat(e.target.value);
+              setPlaybackRate(Math.abs(next - 1) < 0.005 ? 1 : next);
+            }}
             className="w-24 accent-accent"
-            title={`${Math.round(playbackRate * 100)}% — drag to adjust`}
+            title={`${speedPercent}% — click “Speed” to reset to 100%`}
           />
-          <span className="text-xs text-white/60 tabular-nums w-10 text-right">
-            {Math.round(playbackRate * 100)}%
-          </span>
+          <button
+            type="button"
+            onClick={() => setPlaybackRate(1)}
+            className="text-xs text-white/60 tabular-nums w-12 text-right hover:text-white"
+            title="Reset speed to 100%"
+          >
+            {speedPercent}%
+          </button>
         </div>
 
         <button
