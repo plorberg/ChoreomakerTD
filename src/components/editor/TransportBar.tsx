@@ -110,19 +110,21 @@ export function TransportBar() {
       {/* Timeline with formation markers */}
       <div className="relative h-8 px-4 pt-2">
         <div className="relative h-4 bg-bg border border-border rounded">
-          {/* Formation marker pins */}
-          {choreo.formations.map((f) => {
-            const left = (f.timeSec / duration) * 100;
-            return (
-              <button
-                key={f.id}
-                onClick={() => setPlayhead(f.timeSec)}
-                title={`${f.index + 1}. ${f.name}`}
-                className="absolute top-0 bottom-0 w-1 bg-accent hover:w-1.5"
-                style={{ left: `${left}%` }}
-              />
-            );
-          })}
+          {/* Formation marker pins (numbered by chronological order) */}
+          {[...choreo.formations]
+            .sort((a, b) => a.timeSec - b.timeSec)
+            .map((f, i) => {
+              const left = (f.timeSec / duration) * 100;
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => setPlayhead(f.timeSec)}
+                  title={`${i + 1}. ${f.name}`}
+                  className="absolute top-0 bottom-0 w-1 bg-accent hover:w-1.5"
+                  style={{ left: `${left}%` }}
+                />
+              );
+            })}
           {/* Playhead */}
           <div
             className="absolute top-[-2px] bottom-[-2px] w-0.5 bg-white"

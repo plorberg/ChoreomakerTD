@@ -4,13 +4,14 @@ import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import type { Choreography } from '@/domain/choreo';
 import { useEditorStore } from '@/store/editorStore';
-import { useAutoSave } from '@/hooks/useAutoSave';
+import { useShareAutoSave } from '@/hooks/useShareAutoSave';
 import { FormationList } from '@/components/editor/FormationList';
 import { NotesPanel } from '@/components/editor/NotesPanel';
 import { TransportBar } from '@/components/editor/TransportBar';
 import { PerformerPanel } from '@/components/editor/PerformerPanel';
 import { AudioPanel } from '@/components/editor/AudioPanel';
 import { StagePanel } from '@/components/editor/StagePanel';
+import type { ShareRole } from '@/lib/supabase/shareRepo';
 
 const Stage2D = dynamic(() => import('@/components/editor/Stage2D').then((m) => m.Stage2D), {
   ssr: false,
@@ -23,7 +24,15 @@ const Stage3D = dynamic(() => import('@/components/editor/Stage3D').then((m) => 
 
 type MobilePanel = 'stage' | 'list' | 'notes';
 
-export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) {
+export function ShareEditorShell({
+  initialChoreo,
+  role,
+  token,
+}: {
+  initialChoreo: Choreography;
+  role: ShareRole;
+  token: string;
+}) {
   const load = useEditorStore((s) => s.load);
   const view = useEditorStore((s) => s.view);
   const setView = useEditorStore((s) => s.setView);
@@ -36,10 +45,26 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
     load(initialChoreo);
   }, [initialChoreo, load]);
 
-  useAutoSave();
+  // Editors get autosave; viewers don't (any local changes won't persist).
+  // The role check is also enforced server-side in /api/share-save.
+  useShareAutoSaveIfEditor(role, token);
+
+  const isViewer = role === 'viewer';
 
   return (
-    <div className="h-[calc(100vh-3rem)] flex flex-col">
+    <div className="h-screen flex flex-col">
+      {/* Read-only banner */}
+      <div
+        className={`h-10 flex items-center justify-between px-4 text-xs ${
+          isViewer ? 'bg-amber-900/30 border-b border-amber-700/50' : 'bg-blue-900/30 border-b border-blue-700/50'
+        }`}
+      >
+        <span className="font-medium">
+          {isViewer ? '👁 Read-only shared view' : '✏ Editor shared view'}
+        </span>
+        <span className="text-white/60">{initialChoreo.title}</span>
+      </div>
+
       {/* Toolbar */}
       <div className="h-10 border-b border-border flex items-center px-3 gap-2 bg-panel">
         <div className="flex gap-1 text-xs">
@@ -61,24 +86,24 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
           className={`ml-3 px-2 py-1 rounded text-xs ${
             showTransitions ? 'bg-accent/60' : 'bg-border/50 hover:bg-border'
           }`}
-          title="Toggle transition paths between formations"
         >
           Paths
         </button>
 
-        <ChoreoTitle />
-
-        <div className="text-xs text-white/50">
-          {dirty ? 'Unsaved…' : 'Saved'} · ⌘S
+        <div className="ml-auto text-xs text-white/50">
+          {isViewer ? 'View only' : dirty ? 'Unsaved…' : 'Saved'}
         </div>
       </div>
 
-      {/* Main area */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_1fr_280px]">
+      <div
+        className={`flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_1fr_280px] ${
+          isViewer ? 'pointer-events-auto' : ''
+        }`}
+      >
         <aside
           className={`border-r border-border bg-panel overflow-y-auto ${
             mobilePanel === 'list' ? '' : 'hidden md:block'
-          }`}
+          } ${isViewer ? 'pointer-events-none opacity-70' : ''}`}
         >
           <FormationList />
           <PerformerPanel />
@@ -89,24 +114,27 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
         <section
           className={`relative min-h-0 ${mobilePanel === 'stage' ? '' : 'hidden md:block'}`}
         >
-          {view === '2d' && <Stage2D />}
-          {view === '3d' && <Stage3D />}
-          {view === 'split' && (
-            <div className="h-full grid grid-rows-2 md:grid-rows-1 md:grid-cols-2">
-              <div className="relative">
-                <Stage2D />
+          {/* Disable pointer events on the stage when viewer to prevent dragging */}
+          <div className={`absolute inset-0 ${isViewer ? 'pointer-events-none' : ''}`}>
+            {view === '2d' && <Stage2D />}
+            {view === '3d' && <Stage3D />}
+            {view === 'split' && (
+              <div className="h-full grid grid-rows-2 md:grid-rows-1 md:grid-cols-2">
+                <div className="relative">
+                  <Stage2D />
+                </div>
+                <div className="relative border-l border-border">
+                  <Stage3D />
+                </div>
               </div>
-              <div className="relative border-l border-border">
-                <Stage3D />
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </section>
 
         <aside
           className={`border-l border-border bg-panel overflow-y-auto ${
             mobilePanel === 'notes' ? '' : 'hidden md:block'
-          }`}
+          } ${isViewer ? 'pointer-events-none opacity-70' : ''}`}
         >
           <NotesPanel />
         </aside>
@@ -114,7 +142,6 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
 
       <TransportBar />
 
-      {/* Mobile bottom tabs */}
       <nav className="md:hidden h-12 border-t border-border flex bg-panel">
         {(['list', 'stage', 'notes'] as const).map((tab) => (
           <button
@@ -132,43 +159,11 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
   );
 }
 
-function ChoreoTitle() {
-  const title = useEditorStore((s) => s.choreo?.title ?? '');
-  const rename = useEditorStore((s) => s.renameChoreography);
-  const [editing, setEditing] = useState(false);
-
-  if (editing) {
-    return (
-      <input
-        type="text"
-        autoFocus
-        defaultValue={title}
-        maxLength={200}
-        onBlur={(e) => {
-          rename(e.target.value);
-          setEditing(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            rename((e.target as HTMLInputElement).value);
-            setEditing(false);
-          } else if (e.key === 'Escape') {
-            setEditing(false);
-          }
-        }}
-        className="ml-auto text-sm bg-bg border border-accent rounded px-2 py-0.5 outline-none w-64"
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      title="Click to rename"
-      className="ml-auto text-sm font-medium text-white/80 hover:text-white truncate max-w-xs px-2 py-0.5 rounded hover:bg-border/50"
-    >
-      {title || 'Untitled'}
-    </button>
-  );
+/** Hook wrapper so we can conditionally enable autosave without breaking
+ *  the rules of hooks. */
+function useShareAutoSaveIfEditor(role: ShareRole, token: string) {
+  // Always call the hook; pass a no-op token for viewer so the effect runs
+  // but the inner subscription will never write because dirty stays false
+  // (pointer-events-none on the editing surfaces prevents mutations).
+  useShareAutoSave(role === 'editor' ? token : '');
 }

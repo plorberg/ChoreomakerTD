@@ -2,13 +2,14 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { choreoRepoServer } from '@/lib/supabase/choreoRepo.server';
 import { ChoreoCard } from './ChoreoCard';
+import type { ShareLink, ShareRole } from '@/lib/supabase/shareRepo';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; share?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -17,7 +18,25 @@ export default async function DashboardPage({
   if (!user) redirect('/login');
 
   const items = await choreoRepoServer.listForUser(user.id);
-  const { error } = await searchParams;
+  const { error, share: shareIdParam } = await searchParams;
+
+  // Bulk-fetch all share links the user owns so we don't N+1 per card.
+  const { data: linkRows } = await supabase
+    .from('share_links')
+    .select('token, choreo_id, role, created_at')
+    .order('created_at', { ascending: false });
+
+  const linksByChoreo = new Map<string, ShareLink[]>();
+  for (const row of linkRows ?? []) {
+    const list = linksByChoreo.get(row.choreo_id) ?? [];
+    list.push({
+      token: row.token,
+      choreoId: row.choreo_id,
+      role: row.role as ShareRole,
+      createdAt: row.created_at,
+    });
+    linksByChoreo.set(row.choreo_id, list);
+  }
 
   return (
     <main className="max-w-5xl mx-auto p-6">
@@ -59,6 +78,8 @@ export default async function DashboardPage({
               id={c.id}
               title={c.title}
               updatedAt={c.updated_at}
+              shareLinks={linksByChoreo.get(c.id) ?? []}
+              initiallyOpenShare={shareIdParam === c.id}
             />
           ))}
         </ul>

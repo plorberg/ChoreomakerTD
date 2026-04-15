@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { subscribeWithSelector } from 'zustand/middleware';
@@ -23,17 +24,21 @@ interface EditorState {
   isPlaying: boolean;
   playheadSec: number;
   dirty: boolean;
+  showTransitions: boolean;
 
   load: (c: Choreography) => void;
   markClean: () => void;
 
   setView: (v: ViewMode) => void;
+  setShowTransitions: (v: boolean) => void;
+
+  renameChoreography: (title: string) => void;
 
   addFormation: () => void;
   duplicateFormation: (id: string) => void;
   deleteFormation: (id: string) => void;
   selectFormation: (id: string) => void;
-  reorderFormations: (fromIdx: number, toIdx: number) => void;
+  setFormationTime: (id: string, timeSec: number) => void;
   updateFormationMeta: (
     id: string,
     patch: Partial<Pick<Formation, 'name' | 'notes' | 'timeSec' | 'counts' | 'transitionSec'>>,
@@ -90,6 +95,7 @@ export const useEditorStore = create<EditorState>()(
         isPlaying: false,
         playheadSec: 0,
         dirty: false,
+        showTransitions: true,
 
         load: (c) =>
           set((s) => {
@@ -123,15 +129,32 @@ export const useEditorStore = create<EditorState>()(
             s.view = v;
           }),
 
+        setShowTransitions: (v) =>
+          set((s) => {
+            s.showTransitions = v;
+          }),
+
+        renameChoreography: (title) =>
+          set((s) => {
+            if (!s.choreo) return;
+            const trimmed = title.trim().slice(0, 200);
+            if (!trimmed || trimmed === s.choreo.title) return;
+            s.choreo.title = trimmed;
+            s.dirty = true;
+          }),
+
         addFormation: () =>
           set((s) => {
             if (!s.choreo) return;
-            const idx = s.choreo.formations.length;
-            const prev = s.choreo.formations[idx - 1];
-            const f = createEmptyFormation(idx);
-            if (prev) {
-              f.states = JSON.parse(JSON.stringify(prev.states));
-              f.timeSec = prev.timeSec + (prev.counts ?? 8) * 0.5;
+            // Append after the chronologically last formation, carrying its
+            // positions forward so the new picture starts from where the
+            // previous one ended.
+            const sorted = [...s.choreo.formations].sort((a, b) => a.timeSec - b.timeSec);
+            const last = sorted[sorted.length - 1];
+            const f = createEmptyFormation(s.choreo.formations.length);
+            if (last) {
+              f.states = JSON.parse(JSON.stringify(last.states));
+              f.timeSec = last.timeSec + (last.counts ?? 8) * 0.5;
             }
             s.choreo.formations.push(f);
             s.currentFormationId = f.id;
@@ -143,12 +166,23 @@ export const useEditorStore = create<EditorState>()(
             if (!s.choreo) return;
             const src = s.choreo.formations.find((f) => f.id === id);
             if (!src) return;
+
+            // Find the next formation in chronological order to compute a
+            // timeSec halfway between source and next. If source is last,
+            // place the copy 4s later.
+            const sorted = [...s.choreo.formations].sort((a, b) => a.timeSec - b.timeSec);
+            const srcIdx = sorted.findIndex((f) => f.id === id);
+            const next = sorted[srcIdx + 1];
+            const copyTime = next
+              ? src.timeSec + (next.timeSec - src.timeSec) / 2
+              : src.timeSec + 4;
+
             const copy: Formation = {
               ...JSON.parse(JSON.stringify(src)),
               id: crypto.randomUUID(),
-              index: s.choreo.formations.length,
+              index: 0, // recomputed by getOrderedFormations()
               name: `${src.name} copy`,
-              timeSec: src.timeSec + 4,
+              timeSec: copyTime,
             };
             s.choreo.formations.push(copy);
             s.currentFormationId = copy.id;
@@ -159,11 +193,9 @@ export const useEditorStore = create<EditorState>()(
           set((s) => {
             if (!s.choreo) return;
             s.choreo.formations = s.choreo.formations.filter((f) => f.id !== id);
-            s.choreo.formations.forEach((f, i) => {
-              f.index = i;
-            });
             if (s.currentFormationId === id) {
-              s.currentFormationId = s.choreo.formations[0]?.id ?? null;
+              const sorted = [...s.choreo.formations].sort((a, b) => a.timeSec - b.timeSec);
+              s.currentFormationId = sorted[0]?.id ?? null;
             }
             s.dirty = true;
           }),
@@ -175,15 +207,16 @@ export const useEditorStore = create<EditorState>()(
             if (f) s.playheadSec = f.timeSec;
           }),
 
-        reorderFormations: (from, to) =>
+        /**
+         * Set a single formation's timeSec. The list re-orders by time on the
+         * fly via getOrderedFormations; no separate "reorder" action is needed.
+         * The new timeSec is clamped to >= 0.
+         */
+        setFormationTime: (id, timeSec) =>
           set((s) => {
-            if (!s.choreo) return;
-            const arr = s.choreo.formations;
-            const [moved] = arr.splice(from, 1);
-            arr.splice(to, 0, moved);
-            arr.forEach((f, i) => {
-              f.index = i;
-            });
+            const f = s.choreo?.formations.find((x) => x.id === id);
+            if (!f) return;
+            f.timeSec = Math.max(0, timeSec);
             s.dirty = true;
           }),
 
@@ -455,3 +488,21 @@ export const useEditorStore = create<EditorState>()(
 
 export const useCurrentFormation = () =>
   useEditorStore((s) => s.choreo?.formations.find((f) => f.id === s.currentFormationId) ?? null);
+
+/**
+ * Returns formations sorted by timeSec ascending. Use this everywhere the
+ * UI displays formations in order — sidebar list, PDF, etc. — so the order
+ * always matches playback.
+ *
+ * The selector returns the underlying array reference (stable across renders
+ * unless the formations actually change), and the sort happens in a useMemo
+ * keyed on that reference. This avoids the "getSnapshot should be cached"
+ * loop that comes from creating a new sorted array on every store read.
+ */
+export const useOrderedFormations = () => {
+  const formations = useEditorStore((s) => s.choreo?.formations);
+  return useMemo(() => {
+    if (!formations) return [];
+    return [...formations].sort((a, b) => a.timeSec - b.timeSec);
+  }, [formations]);
+};

@@ -127,6 +127,53 @@ const s = StyleSheet.create({
   },
   dot: { position: 'absolute', width: DOT_R * 2, height: DOT_R * 2, borderRadius: DOT_R },
   notes: { flex: 1, fontSize: 10, lineHeight: 1.4 },
+
+  // Coordinate table (one row per performer)
+  coordTable: {
+    width: 170,
+    marginTop: 2,
+  },
+  coordTableHeader: {
+    flexDirection: 'row',
+    borderBottom: '1pt solid #999',
+    paddingBottom: 2,
+    marginBottom: 2,
+  },
+  coordTableHeaderCell: {
+    fontSize: 7,
+    color: '#666',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  coordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 1,
+  },
+  coordRowStriped: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  coordSwatch: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    marginRight: 4,
+    border: '0.5pt solid #333',
+  },
+  coordName: {
+    fontSize: 8,
+    flex: 1,
+  },
+  coordVal: {
+    fontSize: 8,
+    width: 50,
+    textAlign: 'right',
+    color: '#333',
+    fontFamily: 'Courier',
+  },
   footer: {
     position: 'absolute',
     bottom: 20,
@@ -428,15 +475,17 @@ function FormationBlock({
   choreo,
   f,
   prev,
+  displayIndex,
 }: {
   choreo: Choreography;
   f: Formation;
   prev: Formation | null;
+  displayIndex: number;
 }) {
   return (
     <View style={s.formation} wrap={false}>
       <Text style={s.fTitle}>
-        {f.index + 1}. {f.name}
+        {displayIndex + 1}. {f.name}
       </Text>
       <Text style={s.fMeta}>
         Reach at {formatTime(f.timeSec)} · move {(f.transitionSec ?? 2).toFixed(1)}s ·{' '}
@@ -444,10 +493,86 @@ function FormationBlock({
       </Text>
       <View style={s.row}>
         <StageThumbnail choreo={choreo} f={f} prev={prev} />
+        <CoordTable choreo={choreo} f={f} />
         <View style={s.notes}>
           <Text>{f.notes || '—'}</Text>
         </View>
       </View>
+    </View>
+  );
+}
+
+function CoordTable({ choreo, f }: { choreo: Choreography; f: Formation }) {
+  // Sort by index so the performer order matches the 2D sidebar order.
+  const rows: Array<{
+    id: string;
+    name: string;
+    color: string;
+    leader: { x: number; y: number };
+    follower: { x: number; y: number } | null;
+  }> = [];
+  for (const p of choreo.performers) {
+    const st = f.states[p.id];
+    if (!st) continue;
+    const leader = { x: st.position.x, y: st.position.y };
+    const follower = st.splitOffset
+      ? {
+          x: st.position.x + st.splitOffset.x,
+          y: st.position.y + st.splitOffset.y,
+        }
+      : null;
+    rows.push({
+      id: p.id,
+      name: p.name,
+      color: p.color,
+      leader,
+      follower,
+    });
+  }
+
+  const fmt = (v: number) => v.toFixed(1);
+
+  return (
+    <View style={s.coordTable}>
+      <View style={s.coordTableHeader}>
+        <View style={s.coordSwatch} />
+        <Text style={[s.coordName, s.coordTableHeaderCell]}>Performer</Text>
+        <Text style={[s.coordVal, s.coordTableHeaderCell]}>x, y (m)</Text>
+      </View>
+      {rows.map((r, i) => {
+        const rowStyle = i % 2 === 1 ? s.coordRowStriped : s.coordRow;
+        return (
+          <View key={r.id}>
+            <View style={rowStyle}>
+              <View style={[s.coordSwatch, { backgroundColor: r.color }]} />
+              <Text style={s.coordName}>{r.name}</Text>
+              <Text style={s.coordVal}>
+                {fmt(r.leader.x)}, {fmt(r.leader.y)}
+              </Text>
+            </View>
+            {r.follower && (
+              <View style={rowStyle}>
+                <View
+                  style={[
+                    s.coordSwatch,
+                    {
+                      backgroundColor: '#ffffff',
+                      borderWidth: 1,
+                      borderColor: r.color,
+                    },
+                  ]}
+                />
+                <Text style={[s.coordName, { color: '#666', fontStyle: 'italic' }]}>
+                  {r.name} (F)
+                </Text>
+                <Text style={s.coordVal}>
+                  {fmt(r.follower.x)}, {fmt(r.follower.y)}
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -476,8 +601,14 @@ function ChoreoDocument({ choreo }: { choreo: Choreography }) {
           stage {choreo.stage.width}×{choreo.stage.width}m
           {choreo.audio ? ` · audio: ${choreo.audio.name}` : ''}
         </Text>
-        {choreo.formations.map((f) => (
-          <FormationBlock key={f.id} choreo={choreo} f={f} prev={prevById.get(f.id) ?? null} />
+        {sorted.map((f, i) => (
+          <FormationBlock
+            key={f.id}
+            choreo={choreo}
+            f={f}
+            prev={prevById.get(f.id) ?? null}
+            displayIndex={i}
+          />
         ))}
         <Text style={s.footer} fixed>
           Generated with Choreo

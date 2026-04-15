@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import type { Formation, PerformerState, Vec2 } from '@/domain/choreo';
 
@@ -30,19 +31,29 @@ export interface InterpolatedFrame {
   progress: number;
 }
 
-const EMPTY: InterpolatedFrame = { states: {}, activeFormation: null, progress: 0 };
+const EMPTY_STATES: Record<string, PerformerState> = {};
+const EMPTY_FRAME: InterpolatedFrame = {
+  states: EMPTY_STATES,
+  activeFormation: null,
+  progress: 0,
+};
+
 const DEFAULT_TRANSITION_SEC = 2;
 
 export function useInterpolatedFrame(): InterpolatedFrame {
-  return useEditorStore((s): InterpolatedFrame => {
-    const choreo = s.choreo;
-    if (!choreo) return { ...EMPTY };
+  const choreo = useEditorStore((s) => s.choreo);
+  const playheadSec = useEditorStore((s) => s.playheadSec);
+
+  return useMemo((): InterpolatedFrame => {
+    if (!choreo) return EMPTY_FRAME;
+
     const formations = choreo.formations;
     const performers = choreo.performers;
-    if (formations.length === 0) return { ...EMPTY };
+
+    if (formations.length === 0) return EMPTY_FRAME;
 
     const sorted = [...formations].sort((a, b) => a.timeSec - b.timeSec);
-    const t = s.playheadSec;
+    const t = playheadSec;
 
     // Before first → hold first
     if (t <= sorted[0].timeSec) {
@@ -62,7 +73,6 @@ export function useInterpolatedFrame(): InterpolatedFrame {
       };
     }
 
-    // Find pair (A, B) with A.timeSec <= t < B.timeSec
     let fromIdx = 0;
     for (let i = 0; i < sorted.length - 1; i++) {
       if (sorted[i].timeSec <= t && sorted[i + 1].timeSec > t) {
@@ -70,6 +80,7 @@ export function useInterpolatedFrame(): InterpolatedFrame {
         break;
       }
     }
+
     const A = sorted[fromIdx];
     const B = sorted[fromIdx + 1];
 
@@ -78,21 +89,32 @@ export function useInterpolatedFrame(): InterpolatedFrame {
 
     // Hold A until moveStart
     if (t <= moveStart) {
-      return { states: cloneStates(A.states), activeFormation: A, progress: 0 };
+      return {
+        states: cloneStates(A.states),
+        activeFormation: A,
+        progress: 0,
+      };
     }
 
-    // Linear interpolation A → B during [moveStart, B.timeSec]
     const span = B.timeSec - moveStart || 1;
     const raw = (t - moveStart) / span;
     const eased = raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
 
     const states: Record<string, PerformerState> = {};
+
     for (const p of performers) {
       const a = A.states[p.id];
       const b = B.states[p.id];
+
       if (!a && !b) continue;
-      if (!a) { states[p.id] = cloneState(b!); continue; }
-      if (!b) { states[p.id] = cloneState(a); continue; }
+      if (!a) {
+        states[p.id] = cloneState(b!);
+        continue;
+      }
+      if (!b) {
+        states[p.id] = cloneState(a);
+        continue;
+      }
 
       let splitOffset: Vec2 | null | undefined = undefined;
       if (a.splitOffset || b.splitOffset) {
@@ -107,8 +129,13 @@ export function useInterpolatedFrame(): InterpolatedFrame {
         splitOffset,
       };
     }
-    return { states, activeFormation: A, progress: raw };
-  });
+
+    return {
+      states,
+      activeFormation: A,
+      progress: raw,
+    };
+  }, [choreo, playheadSec]);
 }
 
 function cloneStates(source: Record<string, PerformerState>): Record<string, PerformerState> {
@@ -128,7 +155,10 @@ function cloneState(st: PerformerState): PerformerState {
 }
 
 function lerpVec2(a: Vec2, b: Vec2, t: number): Vec2 {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+  };
 }
 
 function lerpAngle(a: number, b: number, t: number): number {

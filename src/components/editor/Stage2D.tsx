@@ -66,6 +66,7 @@ export function Stage2D() {
   const selected = useEditorStore((s) => s.selectedPerformerIds);
   const currentFormationId = useEditorStore((s) => s.currentFormationId);
   const isPlaying = useEditorStore((s) => s.isPlaying);
+  const showTransitions = useEditorStore((s) => s.showTransitions);
   const moveSelectedBy = useEditorStore((s) => s.moveSelectedBy);
   const moveFollowerBy = useEditorStore((s) => s.moveFollowerBy);
   const rotatePerformer = useEditorStore((s) => s.rotatePerformer);
@@ -650,7 +651,7 @@ export function Stage2D() {
           {/* Transition paths from the previous formation → current position.
               Shows each performer's move as a thin colored line. */}
           {(() => {
-            if (!currentFormationId || isPlaying) return null;
+            if (!currentFormationId || isPlaying || !showTransitions) return null;
             const sorted = [...choreo.formations].sort((a, b) => a.timeSec - b.timeSec);
             const idx = sorted.findIndex((x) => x.id === currentFormationId);
             if (idx <= 0) return null;
