@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import { exportChoreoPdf } from '@/lib/pdf/ChoreoPdf';
 import { usePlaybackTick } from '@/hooks/usePlaybackTick';
-import { useAudioEngine } from '@/lib/audio/useAudioEngine';
+import { useAudioEngine, setScrubbing } from '@/lib/audio/useAudioEngine';
 import { formatTime } from '@/lib/format/time';
 
 export function TransportBar() {
@@ -13,6 +13,8 @@ export function TransportBar() {
   const pause = useEditorStore((s) => s.pause);
   const playhead = useEditorStore((s) => s.playheadSec);
   const setPlayhead = useEditorStore((s) => s.setPlayhead);
+  const playbackRate = useEditorStore((s) => s.playbackRate);
+  const setPlaybackRate = useEditorStore((s) => s.setPlaybackRate);
   const choreo = useEditorStore((s) => s.choreo);
 
   // Drive playback: audio if present, otherwise rAF loop
@@ -164,12 +166,40 @@ export function TransportBar() {
           step={0.05}
           value={playhead}
           onChange={(e) => setPlayhead(parseFloat(e.target.value))}
+          onPointerDown={() => setScrubbing(true)}
+          onPointerUp={() => setScrubbing(false)}
+          onPointerCancel={() => setScrubbing(false)}
           className="flex-1 accent-accent"
         />
 
         <span className="text-xs text-white/60 tabular-nums min-w-[90px] text-right">
           {formatTime(playhead)} / {formatTime(duration)}
         </span>
+
+        {/* Speed control — fine-grained 90%–104% range for tempo tweaks
+            during practice. Double-click the label to reset to 100%. */}
+        <div className="flex items-center gap-2 border-l border-border pl-3 ml-1">
+          <span
+            className="text-[10px] uppercase text-white/40 select-none cursor-pointer"
+            onDoubleClick={() => setPlaybackRate(1)}
+            title="Double-click to reset to 100%"
+          >
+            Speed
+          </span>
+          <input
+            type="range"
+            min={0.9}
+            max={1.04}
+            step={0.01}
+            value={playbackRate}
+            onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
+            className="w-24 accent-accent"
+            title={`${Math.round(playbackRate * 100)}% — drag to adjust`}
+          />
+          <span className="text-xs text-white/60 tabular-nums w-10 text-right">
+            {Math.round(playbackRate * 100)}%
+          </span>
+        </div>
 
         <button
           onClick={() => exportChoreoPdf(choreo)}

@@ -23,7 +23,10 @@ export async function middleware(req: NextRequest) {
 
   const path = req.nextUrl.pathname;
   const isAuthPage = path.startsWith('/login') || path.startsWith('/register');
-  const isProtected = path.startsWith('/dashboard') || path.startsWith('/editor');
+  const isProtected =
+    path.startsWith('/dashboard') ||
+    path.startsWith('/editor') ||
+    path.startsWith('/admin');
 
   if (!user && isProtected) {
     const url = req.nextUrl.clone();

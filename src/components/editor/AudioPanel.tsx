@@ -102,6 +102,40 @@ export function AudioPanel() {
 }
 
 function probeDuration(file: File): Promise<number> {
+  // Strategy: try Web Audio API's decodeAudioData first — it actually
+  // decodes the file and gives an exact duration. Falls back to the
+  // <audio> element approach if Web Audio rejects (rare codecs, etc).
+  return decodeWithWebAudio(file).catch(() => probeWithAudioElement(file));
+}
+
+async function decodeWithWebAudio(file: File): Promise<number> {
+  const buf = await file.arrayBuffer();
+  // Some browsers ship AudioContext, others webkitAudioContext (Safari < 14).
+  const Ctx: typeof AudioContext | undefined =
+    (typeof window !== 'undefined' && window.AudioContext) ||
+    (typeof window !== 'undefined' &&
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext) ||
+    undefined;
+  if (!Ctx) throw new Error('Web Audio API unavailable');
+  const ctx = new Ctx();
+  try {
+    // decodeAudioData returns a Promise in modern browsers; older Safari
+    // requires the callback form, but anything that runs Next.js 15 has
+    // the modern form.
+    const audioBuf = await ctx.decodeAudioData(buf);
+    return audioBuf.duration;
+  } finally {
+    // Best-effort cleanup
+    try {
+      await ctx.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function probeWithAudioElement(file: File): Promise<number> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const el = document.createElement('audio');
@@ -122,24 +156,16 @@ function probeDuration(file: File): Promise<number> {
       resolve(dur);
     };
 
-    // Some browsers report Infinity for VBR MP3s on `loadedmetadata` because
-    // the file lacks a Xing/VBRI header that declares total length. The
-    // documented workaround is to seek to a very large position; the browser
-    // then has to scan to the end and reports the real duration via
-    // `durationchange`. We seek back to 0 right after.
     el.onloadedmetadata = () => {
       if (Number.isFinite(el.duration) && el.duration > 0) {
         finish(el.duration);
         return;
       }
-      // Force the browser to compute the real length
       el.currentTime = 1e10;
     };
 
     el.ondurationchange = () => {
       if (Number.isFinite(el.duration) && el.duration > 0 && el.duration < 1e9) {
-        // Reset playhead so the element is in a sane state if anything else
-        // ends up using it (we don't, but being tidy).
         try {
           el.currentTime = 0;
         } catch {
@@ -154,7 +180,6 @@ function probeDuration(file: File): Promise<number> {
       reject(new Error('Could not read audio metadata'));
     };
 
-    // Safety timeout — if neither event fires within 8s, give up.
     setTimeout(() => {
       if (!settled) {
         cleanup();

@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import { useInterpolatedFrame } from '@/hooks/useInterpolatedFrame';
 
-const TOKEN_R = 20;
-const ROTATION_HANDLE_DIST = 36;
 const STAGE_PADDING_PX = 60; // room for axis labels around the square
 const SNAP_M = 0.5;          // grid snap step in meters; hold Shift to bypass
 
@@ -107,6 +105,12 @@ export function Stage2D() {
   const offsetX = (size.w - stagePx) / 2;
   const offsetY = (size.h - stagePx) / 2;
   const bg = choreo.stage.backgroundColor ?? '#c89968';
+
+  // Token size scales with the stage. A dancer is roughly 0.45m wide; we
+  // clamp so tokens stay tappable on tiny screens and don't dominate huge
+  // ones.
+  const TOKEN_R = Math.max(8, Math.min(22, pxPerMeter * 0.45));
+  const ROTATION_HANDLE_DIST = TOKEN_R + 14;
 
   const screenToStage = (sx: number, sy: number): Vec2 => ({
     x: (sx - offsetX) / pxPerMeter - stageMeters / 2,

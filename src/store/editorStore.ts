@@ -23,6 +23,7 @@ interface EditorState {
   view: ViewMode;
   isPlaying: boolean;
   playheadSec: number;
+  playbackRate: number; // 1.0 = original speed; 0.5 = half; 2.0 = double
   dirty: boolean;
   showTransitions: boolean;
 
@@ -31,6 +32,7 @@ interface EditorState {
 
   setView: (v: ViewMode) => void;
   setShowTransitions: (v: boolean) => void;
+  setPlaybackRate: (rate: number) => void;
 
   renameChoreography: (title: string) => void;
 
@@ -94,6 +96,7 @@ export const useEditorStore = create<EditorState>()(
         view: '2d',
         isPlaying: false,
         playheadSec: 0,
+        playbackRate: 1.0,
         dirty: false,
         showTransitions: true,
 
@@ -134,6 +137,14 @@ export const useEditorStore = create<EditorState>()(
             s.showTransitions = v;
           }),
 
+        setPlaybackRate: (rate) =>
+          set((s) => {
+            // Clamp to a sane range. 0.25× is slow enough to study a tricky
+            // count; 2× is fast enough to skim. Below 0.25× or above 2× the
+            // audio engine starts to sound terrible anyway.
+            s.playbackRate = Math.max(0.25, Math.min(2, rate));
+          }),
+
         renameChoreography: (title) =>
           set((s) => {
             if (!s.choreo) return;
@@ -158,6 +169,10 @@ export const useEditorStore = create<EditorState>()(
             }
             s.choreo.formations.push(f);
             s.currentFormationId = f.id;
+            // Sync playhead so the editor renders the new formation. Without
+            // this, the user sees the previous formation but mutates this
+            // one — looks like dragging does nothing.
+            s.playheadSec = f.timeSec;
             s.dirty = true;
           }),
 
@@ -186,6 +201,7 @@ export const useEditorStore = create<EditorState>()(
             };
             s.choreo.formations.push(copy);
             s.currentFormationId = copy.id;
+            s.playheadSec = copy.timeSec;
             s.dirty = true;
           }),
 
