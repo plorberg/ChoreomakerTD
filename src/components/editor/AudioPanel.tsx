@@ -106,14 +106,62 @@ function probeDuration(file: File): Promise<number> {
     const url = URL.createObjectURL(file);
     const el = document.createElement('audio');
     el.preload = 'metadata';
-    el.src = url;
-    el.onloadedmetadata = () => {
+
+    let settled = false;
+    const cleanup = () => {
       URL.revokeObjectURL(url);
-      resolve(el.duration || 0);
+      el.onloadedmetadata = null;
+      el.ondurationchange = null;
+      el.onerror = null;
     };
+
+    const finish = (dur: number) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(dur);
+    };
+
+    // Some browsers report Infinity for VBR MP3s on `loadedmetadata` because
+    // the file lacks a Xing/VBRI header that declares total length. The
+    // documented workaround is to seek to a very large position; the browser
+    // then has to scan to the end and reports the real duration via
+    // `durationchange`. We seek back to 0 right after.
+    el.onloadedmetadata = () => {
+      if (Number.isFinite(el.duration) && el.duration > 0) {
+        finish(el.duration);
+        return;
+      }
+      // Force the browser to compute the real length
+      el.currentTime = 1e10;
+    };
+
+    el.ondurationchange = () => {
+      if (Number.isFinite(el.duration) && el.duration > 0 && el.duration < 1e9) {
+        // Reset playhead so the element is in a sane state if anything else
+        // ends up using it (we don't, but being tidy).
+        try {
+          el.currentTime = 0;
+        } catch {
+          /* ignore */
+        }
+        finish(el.duration);
+      }
+    };
+
     el.onerror = () => {
-      URL.revokeObjectURL(url);
+      cleanup();
       reject(new Error('Could not read audio metadata'));
     };
+
+    // Safety timeout — if neither event fires within 8s, give up.
+    setTimeout(() => {
+      if (!settled) {
+        cleanup();
+        reject(new Error('Audio metadata probe timed out'));
+      }
+    }, 8000);
+
+    el.src = url;
   });
 }
