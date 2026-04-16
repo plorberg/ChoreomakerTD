@@ -76,21 +76,34 @@ export const adminRepo = {
 
   async listAllChoreos(): Promise<AdminChoreo[]> {
     const supabase = await createClient();
-    const { data, error } = await supabase
+    // We don't rely on PostgREST's FK-embed (`profiles!...(email)`) because
+    // choreographies.owner_id → auth.users.id, and the profiles row is
+    // joined via its own PK also pointing at auth.users.id — there's no
+    // direct FK between choreographies and profiles that PostgREST can
+    // autodetect. Manual two-step join is simpler and always works.
+    const { data: rows, error } = await supabase
       .from('choreographies')
-      .select('id, title, owner_id, updated_at, profiles!choreographies_owner_id_fkey(email)')
+      .select('id, title, owner_id, updated_at')
       .order('updated_at', { ascending: false });
     if (error) throw error;
-    return (data ?? []).map((r) => {
-      const profile = r.profiles as unknown as { email: string } | null;
-      return {
-        id: r.id,
-        title: r.title,
-        ownerId: r.owner_id,
-        ownerEmail: profile?.email ?? '(unknown)',
-        updatedAt: r.updated_at,
-      };
-    });
+
+    const ownerIds = Array.from(new Set((rows ?? []).map((r) => r.owner_id)));
+    const emailById = new Map<string, string>();
+    if (ownerIds.length > 0) {
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .in('id', ownerIds);
+      for (const p of profs ?? []) emailById.set(p.id, p.email);
+    }
+
+    return (rows ?? []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      ownerId: r.owner_id,
+      ownerEmail: emailById.get(r.owner_id) ?? '(unknown)',
+      updatedAt: r.updated_at,
+    }));
   },
 
   /** Promote / demote a user. */
