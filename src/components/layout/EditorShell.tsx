@@ -5,12 +5,15 @@ import { useEffect, useState } from 'react';
 import type { Choreography } from '@/domain/choreo';
 import { useEditorStore } from '@/store/editorStore';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { useCollab } from '@/hooks/useCollab';
 import { FormationList } from '@/components/editor/FormationList';
 import { NotesPanel } from '@/components/editor/NotesPanel';
 import { TransportBar } from '@/components/editor/TransportBar';
 import { PerformerPanel } from '@/components/editor/PerformerPanel';
 import { AudioPanel } from '@/components/editor/AudioPanel';
 import { StagePanel } from '@/components/editor/StagePanel';
+import { PresenceAvatars } from '@/components/collab/PresenceAvatars';
+import { RelativeTime } from '@/components/ui/RelativeTime';
 
 const Stage2D = dynamic(() => import('@/components/editor/Stage2D').then((m) => m.Stage2D), {
   ssr: false,
@@ -23,13 +26,19 @@ const Stage3D = dynamic(() => import('@/components/editor/Stage3D').then((m) => 
 
 type MobilePanel = 'stage' | 'list' | 'notes';
 
-export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) {
+interface Props {
+  initialChoreo: Choreography;
+  currentUser: { email: string; displayName: string };
+}
+
+export function EditorShell({ initialChoreo, currentUser }: Props) {
   const load = useEditorStore((s) => s.load);
   const view = useEditorStore((s) => s.view);
   const setView = useEditorStore((s) => s.setView);
   const showTransitions = useEditorStore((s) => s.showTransitions);
   const setShowTransitions = useEditorStore((s) => s.setShowTransitions);
   const dirty = useEditorStore((s) => s.dirty);
+  const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('stage');
 
   useEffect(() => {
@@ -37,6 +46,12 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
   }, [initialChoreo, load]);
 
   useAutoSave();
+
+  // Realtime collaboration: presence + cursors + choreo sync
+  const { peers, cursors } = useCollab({
+    choreoId: initialChoreo.id,
+    currentUser,
+  });
 
   return (
     <div className="h-[calc(100vh-3rem)] flex flex-col">
@@ -68,8 +83,21 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
 
         <ChoreoTitle />
 
-        <div className="text-xs text-white/50">
-          {dirty ? 'Unsaved…' : 'Saved'} · ⌘S
+        <div className="text-xs text-white/50 flex items-center gap-2">
+          {dirty ? (
+            <span className="text-amber-300">Unsaved…</span>
+          ) : lastSavedAt ? (
+            <span>
+              Saved · <RelativeTime ms={lastSavedAt} />
+            </span>
+          ) : (
+            <span>Saved</span>
+          )}
+          <span className="text-white/30">· ⌘S</span>
+        </div>
+
+        <div className="ml-2 pl-2 border-l border-border">
+          <PresenceAvatars peers={peers} />
         </div>
       </div>
 
@@ -89,12 +117,12 @@ export function EditorShell({ initialChoreo }: { initialChoreo: Choreography }) 
         <section
           className={`relative min-h-0 ${mobilePanel === 'stage' ? '' : 'hidden md:block'}`}
         >
-          {view === '2d' && <Stage2D />}
+          {view === '2d' && <Stage2D cursors={cursors} />}
           {view === '3d' && <Stage3D />}
           {view === 'split' && (
             <div className="h-full grid grid-rows-2 md:grid-rows-1 md:grid-cols-2">
               <div className="relative">
-                <Stage2D />
+                <Stage2D cursors={cursors} />
               </div>
               <div className="relative border-l border-border">
                 <Stage3D />

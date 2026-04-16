@@ -5,12 +5,15 @@ import { useEffect, useState } from 'react';
 import type { Choreography } from '@/domain/choreo';
 import { useEditorStore } from '@/store/editorStore';
 import { useShareAutoSave } from '@/hooks/useShareAutoSave';
+import { useCollab, type CollabUser, type RemoteCursor } from '@/hooks/useCollab';
 import { FormationList } from '@/components/editor/FormationList';
 import { NotesPanel } from '@/components/editor/NotesPanel';
 import { TransportBar } from '@/components/editor/TransportBar';
 import { PerformerPanel } from '@/components/editor/PerformerPanel';
 import { AudioPanel } from '@/components/editor/AudioPanel';
 import { StagePanel } from '@/components/editor/StagePanel';
+import { PresenceAvatars } from '@/components/collab/PresenceAvatars';
+import { RelativeTime } from '@/components/ui/RelativeTime';
 import type { ShareRole } from '@/lib/supabase/shareRepo';
 
 const Stage2D = dynamic(() => import('@/components/editor/Stage2D').then((m) => m.Stage2D), {
@@ -24,30 +27,35 @@ const Stage3D = dynamic(() => import('@/components/editor/Stage3D').then((m) => 
 
 type MobilePanel = 'stage' | 'list' | 'notes';
 
-export function ShareEditorShell({
-  initialChoreo,
-  role,
-  token,
-}: {
+interface Props {
   initialChoreo: Choreography;
   role: ShareRole;
   token: string;
-}) {
+  /** Null for anonymous visitors. Collab stays off for them. */
+  currentUser: { email: string; displayName: string } | null;
+}
+
+export function ShareEditorShell({ initialChoreo, role, token, currentUser }: Props) {
   const load = useEditorStore((s) => s.load);
   const view = useEditorStore((s) => s.view);
   const setView = useEditorStore((s) => s.setView);
   const showTransitions = useEditorStore((s) => s.showTransitions);
   const setShowTransitions = useEditorStore((s) => s.setShowTransitions);
   const dirty = useEditorStore((s) => s.dirty);
+  const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('stage');
 
   useEffect(() => {
     load(initialChoreo);
   }, [initialChoreo, load]);
 
-  // Editors get autosave; viewers don't (any local changes won't persist).
-  // The role check is also enforced server-side in /api/share-save.
+  // Editors get autosave; viewers don't. Server also enforces this.
   useShareAutoSaveIfEditor(role, token);
+
+  // Collab only for logged-in editor-role visitors. Viewers and anonymous
+  // visitors get no presence / cursor / sync.
+  const collabEnabled = role === 'editor' && currentUser !== null;
+  const { peers, cursors } = useCollabIfEnabled(collabEnabled, initialChoreo.id, currentUser);
 
   const isViewer = role === 'viewer';
 
@@ -90,9 +98,25 @@ export function ShareEditorShell({
           Paths
         </button>
 
-        <div className="ml-auto text-xs text-white/50">
-          {isViewer ? 'View only' : dirty ? 'Unsaved…' : 'Saved'}
+        <div className="ml-auto text-xs text-white/50 flex items-center gap-2">
+          {isViewer ? (
+            <span>View only</span>
+          ) : dirty ? (
+            <span className="text-amber-300">Unsaved…</span>
+          ) : lastSavedAt ? (
+            <span>
+              Saved · <RelativeTime ms={lastSavedAt} />
+            </span>
+          ) : (
+            <span>Saved</span>
+          )}
         </div>
+
+        {collabEnabled && peers.length > 0 && (
+          <div className="ml-2 pl-2 border-l border-border">
+            <PresenceAvatars peers={peers} />
+          </div>
+        )}
       </div>
 
       <div
@@ -114,14 +138,13 @@ export function ShareEditorShell({
         <section
           className={`relative min-h-0 ${mobilePanel === 'stage' ? '' : 'hidden md:block'}`}
         >
-          {/* Disable pointer events on the stage when viewer to prevent dragging */}
           <div className={`absolute inset-0 ${isViewer ? 'pointer-events-none' : ''}`}>
-            {view === '2d' && <Stage2D />}
+            {view === '2d' && <Stage2D cursors={cursors} />}
             {view === '3d' && <Stage3D />}
             {view === 'split' && (
               <div className="h-full grid grid-rows-2 md:grid-rows-1 md:grid-cols-2">
                 <div className="relative">
-                  <Stage2D />
+                  <Stage2D cursors={cursors} />
                 </div>
                 <div className="relative border-l border-border">
                   <Stage3D />
@@ -159,11 +182,31 @@ export function ShareEditorShell({
   );
 }
 
-/** Hook wrapper so we can conditionally enable autosave without breaking
- *  the rules of hooks. */
 function useShareAutoSaveIfEditor(role: ShareRole, token: string) {
-  // Always call the hook; pass a no-op token for viewer so the effect runs
-  // but the inner subscription will never write because dirty stays false
-  // (pointer-events-none on the editing surfaces prevents mutations).
+  // Always call the hook; pass an empty token for viewer which makes it
+  // a no-op internally.
   useShareAutoSave(role === 'editor' ? token : '');
+}
+
+/**
+ * Conditional collab: either subscribes to the realtime channel, or
+ * returns empty stubs. We pick the branch deterministically from
+ * `enabled`, which comes from props and doesn't change during the
+ * component's lifetime, so the rules-of-hooks are preserved.
+ */
+function useCollabIfEnabled(
+  enabled: boolean,
+  choreoId: string,
+  currentUser: { email: string; displayName: string } | null,
+): { peers: CollabUser[]; cursors: Record<string, RemoteCursor> } {
+  // We must always call the same set of hooks. If disabled, we still call
+  // useCollab but with a sentinel user — then ignore its output.
+  const fallbackUser = { email: '', displayName: '' };
+  const effectiveChoreoId = enabled && currentUser ? choreoId : '';
+  const result = useCollab({
+    choreoId: effectiveChoreoId,
+    currentUser: enabled && currentUser ? currentUser : fallbackUser,
+  });
+  if (!enabled || !currentUser) return { peers: [], cursors: {} };
+  return result;
 }

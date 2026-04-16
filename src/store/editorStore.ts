@@ -25,10 +25,17 @@ interface EditorState {
   playheadSec: number;
   playbackRate: number; // 1.0 = original speed; 0.5 = half; 2.0 = double
   dirty: boolean;
+  lastSavedAt: number | null; // Date.now() of last successful save
   showTransitions: boolean;
 
   load: (c: Choreography) => void;
   markClean: () => void;
+  /**
+   * Replace the choreo with a version coming from a remote collaborator.
+   * Bypasses `dirty` tracking and DOES NOT add to the undo history.
+   * The current formation selection is preserved when possible.
+   */
+  applyRemoteChoreo: (c: Choreography) => void;
 
   setView: (v: ViewMode) => void;
   setShowTransitions: (v: boolean) => void;
@@ -98,6 +105,7 @@ export const useEditorStore = create<EditorState>()(
         playheadSec: 0,
         playbackRate: 1.0,
         dirty: false,
+        lastSavedAt: null,
         showTransitions: true,
 
         load: (c) =>
@@ -121,10 +129,36 @@ export const useEditorStore = create<EditorState>()(
             s.currentFormationId = migrated.formations[0]?.id ?? null;
             s.playheadSec = migrated.formations[0]?.timeSec ?? 0;
             s.dirty = false;
+            // Treat the initial load as "freshly saved" so the UI shows
+            // "Saved" rather than "never". Server-sourced data is by
+            // definition up to date with the server.
+            s.lastSavedAt = Date.now();
           }),
         markClean: () =>
           set((s) => {
             s.dirty = false;
+            s.lastSavedAt = Date.now();
+          }),
+        applyRemoteChoreo: (c) =>
+          set((s) => {
+            // Preserve local ephemeral state: current formation focus,
+            // selection, playhead, play state. Only swap the shared data.
+            const previousFormationId = s.currentFormationId;
+            s.choreo = c;
+            // Keep the currently focused formation if it still exists
+            if (previousFormationId && c.formations.some((f) => f.id === previousFormationId)) {
+              s.currentFormationId = previousFormationId;
+            } else {
+              s.currentFormationId = c.formations[0]?.id ?? null;
+            }
+            // Drop selection of performers that no longer exist
+            s.selectedPerformerIds = s.selectedPerformerIds.filter((id) =>
+              c.performers.some((p) => p.id === id),
+            );
+            // Remote arrived — treat it as authoritative. Not dirty relative
+            // to server; lastSavedAt is "now" since the server saw this too.
+            s.dirty = false;
+            s.lastSavedAt = Date.now();
           }),
 
         setView: (v) =>

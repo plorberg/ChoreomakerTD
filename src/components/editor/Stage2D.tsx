@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import { useInterpolatedFrame } from '@/hooks/useInterpolatedFrame';
+import {
+  broadcastCursor,
+  setCollabDragInProgress,
+  type RemoteCursor,
+} from '@/hooks/useCollab';
+import { RemoteCursors } from '@/components/collab/RemoteCursors';
 
 const STAGE_PADDING_PX = 60; // room for axis labels around the square
 const SNAP_M = 0.5;          // grid snap step in meters; hold Shift to bypass
@@ -49,7 +55,12 @@ type Interaction =
       currentScreen: Vec2;
     };
 
-export function Stage2D() {
+export interface Stage2DProps {
+  /** Remote collaborator cursor positions keyed by clientId. Optional. */
+  cursors?: Record<string, RemoteCursor>;
+}
+
+export function Stage2D({ cursors }: Stage2DProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const interactionRef = useRef<Interaction>({ kind: 'idle' });
@@ -225,6 +236,9 @@ export function Stage2D() {
     try {
       svg.setPointerCapture(pointerId);
     } catch {}
+    // Tell the collab channel: don't clobber our state with remote updates
+    // while we're actively manipulating something.
+    setCollabDragInProgress(true);
   };
 
   // ---- Background pointer down (start marquee or clear selection) ------
@@ -341,7 +355,14 @@ export function Stage2D() {
   };
 
   // ---- Pointer move (single handler at SVG root) -----------------------
+  // Broadcasts the cursor position to collaborators on every move,
+  // regardless of whether an interaction is active — so teammates can see
+  // each other's cursors hovering over the stage while thinking, not just
+  // during drags.
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const stagePt = getStagePoint(e);
+    broadcastCursor(stagePt.x, stagePt.y);
+
     const it = interactionRef.current;
     if (it.kind === 'idle') return;
     if ('pointerId' in it && it.pointerId !== e.pointerId) return;
@@ -484,6 +505,7 @@ export function Stage2D() {
     }
 
     interactionRef.current = { kind: 'idle' };
+    setCollabDragInProgress(false);
     const svg = svgRef.current;
     if (svg) {
       try {
@@ -874,6 +896,11 @@ export function Stage2D() {
               strokeWidth={1}
             />
           </g>
+        )}
+
+        {/* Remote collaborator cursors */}
+        {cursors && (
+          <RemoteCursors cursors={cursors} toScreen={stageToScreen} />
         )}
       </svg>
     </div>
