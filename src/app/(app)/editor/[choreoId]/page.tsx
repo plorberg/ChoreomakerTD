@@ -12,8 +12,6 @@ export default async function EditorPage({
   const choreo = await choreoRepoServer.get(choreoId);
   if (!choreo) notFound();
 
-  // Collab needs the current user's identity. Fall back to email if the
-  // profile has no display_name set.
   const supabase = await createClient();
   const {
     data: { user },

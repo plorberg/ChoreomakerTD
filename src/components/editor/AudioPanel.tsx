@@ -38,15 +38,13 @@ export function AudioPanel() {
         .upload(path, file, { cacheControl: '3600', upsert: false });
       if (upErr) throw upErr;
 
-      const { data: signed, error: sErr } = await supabase.storage
-        .from('audio')
-        .createSignedUrl(path, 60 * 60 * 24 * 7);
-      if (sErr) throw sErr;
-
       setAudio({
         id: uuid(),
         name: file.name,
-        storagePath: signed.signedUrl,
+        // Store the raw storage path, NOT the signed URL. The signed URL
+        // expires after 7 days; the server re-signs it at load time so
+        // share-link visitors always get a fresh one.
+        storagePath: path,
         durationSec: duration,
       });
     } catch (e) {

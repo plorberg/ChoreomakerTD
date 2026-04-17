@@ -75,6 +75,8 @@ export function NotesPanel() {
 
       <SplitMergeSection />
 
+      <DistancesSection />
+
       <label className="block text-xs text-white/60">
         Notes
         <textarea
@@ -148,6 +150,80 @@ function SplitMergeSection() {
         Shortcut: press <kbd className="px-1 rounded bg-border/50 text-white/60">S</kbd> to toggle,
         <kbd className="px-1 rounded bg-border/50 text-white/60 ml-1">R</kbd> to rotate 45°.
       </p>
+    </div>
+  );
+}
+
+function DistancesSection() {
+  const showDistances = useEditorStore((s) => s.showDistances);
+  const choreo = useEditorStore((s) => s.choreo);
+  const currentFormationId = useEditorStore((s) => s.currentFormationId);
+
+  if (!showDistances || !choreo || !currentFormationId) return null;
+
+  // Find the previous formation in chronological order
+  const sorted = [...choreo.formations].sort((a, b) => a.timeSec - b.timeSec);
+  const idx = sorted.findIndex((f) => f.id === currentFormationId);
+  if (idx <= 0) {
+    return (
+      <div className="border-t border-border pt-3">
+        <h3 className="text-xs uppercase tracking-wider text-white/50 mb-1">Distances</h3>
+        <p className="text-[10px] text-white/40">First formation — no transition distances.</p>
+      </div>
+    );
+  }
+
+  const prev = sorted[idx - 1];
+  const current = sorted[idx];
+
+  // Compute distance per performer
+  const distances: { id: string; name: string; color: string; dist: number }[] = [];
+  for (const p of choreo.performers) {
+    const a = prev.states[p.id];
+    const b = current.states[p.id];
+    if (!a || !b) continue;
+    const dx = b.position.x - a.position.x;
+    const dy = b.position.y - a.position.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    distances.push({ id: p.id, name: p.name, color: p.color, dist });
+  }
+
+  // Sort by distance descending, take top 3
+  distances.sort((a, b) => b.dist - a.dist);
+  const top = distances.slice(0, 3);
+
+  if (top.length === 0) {
+    return (
+      <div className="border-t border-border pt-3">
+        <h3 className="text-xs uppercase tracking-wider text-white/50 mb-1">Distances</h3>
+        <p className="text-[10px] text-white/40">No performers with movement data.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-border pt-3">
+      <h3 className="text-xs uppercase tracking-wider text-white/50 mb-2">
+        Top {top.length} longest distances
+      </h3>
+      <ol className="space-y-1.5">
+        {top.map((d, i) => (
+          <li key={d.id} className="flex items-center gap-2 text-sm">
+            <span className="text-xs text-white/40 w-4 tabular-nums">{i + 1}.</span>
+            <span
+              className="w-3 h-3 rounded-full flex-shrink-0 border border-white/20"
+              style={{ backgroundColor: d.color }}
+            />
+            <span className="flex-1 truncate">{d.name}</span>
+            <span className="text-xs text-white/60 tabular-nums">{d.dist.toFixed(1)}m</span>
+          </li>
+        ))}
+      </ol>
+      {distances.length > 3 && (
+        <p className="text-[10px] text-white/30 mt-1.5">
+          …and {distances.length - 3} more performers
+        </p>
+      )}
     </div>
   );
 }

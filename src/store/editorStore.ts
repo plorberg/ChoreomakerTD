@@ -23,22 +23,22 @@ interface EditorState {
   view: ViewMode;
   isPlaying: boolean;
   playheadSec: number;
-  playbackRate: number; // 1.0 = original speed; 0.5 = half; 2.0 = double
+  playbackRate: number;
   dirty: boolean;
-  lastSavedAt: number | null; // Date.now() of last successful save
+  lastSavedAt: number | null;
   showTransitions: boolean;
+  showDistances: boolean;
+  /** When true, editing controls (add/delete/duplicate) are hidden. */
+  readOnly: boolean;
 
   load: (c: Choreography) => void;
   markClean: () => void;
-  /**
-   * Replace the choreo with a version coming from a remote collaborator.
-   * Bypasses `dirty` tracking and DOES NOT add to the undo history.
-   * The current formation selection is preserved when possible.
-   */
   applyRemoteChoreo: (c: Choreography) => void;
+  setReadOnly: (v: boolean) => void;
 
   setView: (v: ViewMode) => void;
   setShowTransitions: (v: boolean) => void;
+  setShowDistances: (v: boolean) => void;
   setPlaybackRate: (rate: number) => void;
 
   renameChoreography: (title: string) => void;
@@ -107,12 +107,11 @@ export const useEditorStore = create<EditorState>()(
         dirty: false,
         lastSavedAt: null,
         showTransitions: true,
+        showDistances: false,
+        readOnly: false,
 
         load: (c) =>
           set((s) => {
-            // Migration: old records may carry transitionMs (number, milliseconds).
-            // Also: stage may have been rectangular (12×10). Force square by
-            // taking the larger dimension.
             const stageSide = Math.round(Math.max(c.stage.width, c.stage.height));
             const migrated = {
               ...c,
@@ -129,9 +128,6 @@ export const useEditorStore = create<EditorState>()(
             s.currentFormationId = migrated.formations[0]?.id ?? null;
             s.playheadSec = migrated.formations[0]?.timeSec ?? 0;
             s.dirty = false;
-            // Treat the initial load as "freshly saved" so the UI shows
-            // "Saved" rather than "never". Server-sourced data is by
-            // definition up to date with the server.
             s.lastSavedAt = Date.now();
           }),
         markClean: () =>
@@ -141,22 +137,16 @@ export const useEditorStore = create<EditorState>()(
           }),
         applyRemoteChoreo: (c) =>
           set((s) => {
-            // Preserve local ephemeral state: current formation focus,
-            // selection, playhead, play state. Only swap the shared data.
             const previousFormationId = s.currentFormationId;
             s.choreo = c;
-            // Keep the currently focused formation if it still exists
             if (previousFormationId && c.formations.some((f) => f.id === previousFormationId)) {
               s.currentFormationId = previousFormationId;
             } else {
               s.currentFormationId = c.formations[0]?.id ?? null;
             }
-            // Drop selection of performers that no longer exist
             s.selectedPerformerIds = s.selectedPerformerIds.filter((id) =>
               c.performers.some((p) => p.id === id),
             );
-            // Remote arrived — treat it as authoritative. Not dirty relative
-            // to server; lastSavedAt is "now" since the server saw this too.
             s.dirty = false;
             s.lastSavedAt = Date.now();
           }),
@@ -169,6 +159,16 @@ export const useEditorStore = create<EditorState>()(
         setShowTransitions: (v) =>
           set((s) => {
             s.showTransitions = v;
+          }),
+
+        setShowDistances: (v) =>
+          set((s) => {
+            s.showDistances = v;
+          }),
+
+        setReadOnly: (v) =>
+          set((s) => {
+            s.readOnly = v;
           }),
 
         setPlaybackRate: (rate) =>

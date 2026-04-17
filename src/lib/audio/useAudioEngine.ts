@@ -177,7 +177,23 @@ export function useAudioEngine() {
         const ctx = ensureCtx();
         await ctx.resume();
 
-        const res = await fetch(storagePath);
+        // Always resolve through /api/audio-url. It handles:
+        //   - Raw paths ("userId/uuid.mp3") → signs fresh
+        //   - Old signed URLs ("https://...") → extracts raw path, signs fresh
+        // This guarantees share-link visitors get a working URL even if
+        // the stored URL expired months ago.
+        const signRes = await fetch('/api/audio-url', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ path: storagePath }),
+        });
+        let audioUrl = storagePath;
+        if (signRes.ok) {
+          const { url } = await signRes.json();
+          if (url) audioUrl = url;
+        }
+
+        const res = await fetch(audioUrl);
         if (!res.ok) throw new Error(`Audio fetch failed: ${res.status}`);
 
         const arrayBuf = await res.arrayBuffer();

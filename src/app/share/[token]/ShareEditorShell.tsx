@@ -31,7 +31,6 @@ interface Props {
   initialChoreo: Choreography;
   role: ShareRole;
   token: string;
-  /** Null for anonymous visitors. Collab stays off for them. */
   currentUser: { email: string; displayName: string } | null;
 }
 
@@ -41,27 +40,28 @@ export function ShareEditorShell({ initialChoreo, role, token, currentUser }: Pr
   const setView = useEditorStore((s) => s.setView);
   const showTransitions = useEditorStore((s) => s.showTransitions);
   const setShowTransitions = useEditorStore((s) => s.setShowTransitions);
+  const showDistances = useEditorStore((s) => s.showDistances);
+  const setShowDistances = useEditorStore((s) => s.setShowDistances);
   const dirty = useEditorStore((s) => s.dirty);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
+  const setReadOnly = useEditorStore((s) => s.setReadOnly);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('stage');
-
-  useEffect(() => {
-    load(initialChoreo);
-  }, [initialChoreo, load]);
-
-  // Editors get autosave; viewers don't. Server also enforces this.
-  useShareAutoSaveIfEditor(role, token);
-
-  // Collab only for logged-in editor-role visitors. Viewers and anonymous
-  // visitors get no presence / cursor / sync.
-  const collabEnabled = role === 'editor' && currentUser !== null;
-  const { peers, cursors } = useCollabIfEnabled(collabEnabled, initialChoreo.id, currentUser);
 
   const isViewer = role === 'viewer';
 
+  useEffect(() => {
+    load(initialChoreo);
+    setReadOnly(isViewer);
+    return () => setReadOnly(false);
+  }, [initialChoreo, load, isViewer, setReadOnly]);
+
+  useShareAutoSaveIfEditor(role, token);
+
+  const collabEnabled = role === 'editor' && currentUser !== null;
+  const { peers, cursors } = useCollabIfEnabled(collabEnabled, initialChoreo.id, currentUser);
+
   return (
     <div className="h-screen flex flex-col">
-      {/* Read-only banner */}
       <div
         className={`h-10 flex items-center justify-between px-4 text-xs ${
           isViewer ? 'bg-amber-900/30 border-b border-amber-700/50' : 'bg-blue-900/30 border-b border-blue-700/50'
@@ -73,7 +73,6 @@ export function ShareEditorShell({ initialChoreo, role, token, currentUser }: Pr
         <span className="text-white/60">{initialChoreo.title}</span>
       </div>
 
-      {/* Toolbar */}
       <div className="h-10 border-b border-border flex items-center px-3 gap-2 bg-panel">
         <div className="flex gap-1 text-xs">
           {(['2d', '3d', 'split'] as const).map((v) => (
@@ -98,6 +97,16 @@ export function ShareEditorShell({ initialChoreo, role, token, currentUser }: Pr
           Paths
         </button>
 
+        <button
+          onClick={() => setShowDistances(!showDistances)}
+          className={`px-2 py-1 rounded text-xs ${
+            showDistances ? 'bg-accent/60' : 'bg-border/50 hover:bg-border'
+          }`}
+          title="Show top 3 longest distances in the side panel"
+        >
+          Distances
+        </button>
+
         <div className="ml-auto text-xs text-white/50 flex items-center gap-2">
           {isViewer ? (
             <span>View only</span>
@@ -120,14 +129,15 @@ export function ShareEditorShell({ initialChoreo, role, token, currentUser }: Pr
       </div>
 
       <div
-        className={`flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_1fr_280px] ${
-          isViewer ? 'pointer-events-auto' : ''
-        }`}
+        className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_1fr_280px]"
       >
+        {/* Left sidebar: viewer CAN click formations + play music, just
+            not edit. Opacity hint shows it's shared/read-only but clicks
+            pass through for navigation. */}
         <aside
           className={`border-r border-border bg-panel overflow-y-auto ${
             mobilePanel === 'list' ? '' : 'hidden md:block'
-          } ${isViewer ? 'pointer-events-none opacity-70' : ''}`}
+          } ${isViewer ? 'opacity-80' : ''}`}
         >
           <FormationList />
           <PerformerPanel />
@@ -138,6 +148,7 @@ export function ShareEditorShell({ initialChoreo, role, token, currentUser }: Pr
         <section
           className={`relative min-h-0 ${mobilePanel === 'stage' ? '' : 'hidden md:block'}`}
         >
+          {/* Only the stage canvas is blocked for viewers — no dragging */}
           <div className={`absolute inset-0 ${isViewer ? 'pointer-events-none' : ''}`}>
             {view === '2d' && <Stage2D cursors={cursors} />}
             {view === '3d' && <Stage3D />}
@@ -157,7 +168,7 @@ export function ShareEditorShell({ initialChoreo, role, token, currentUser }: Pr
         <aside
           className={`border-l border-border bg-panel overflow-y-auto ${
             mobilePanel === 'notes' ? '' : 'hidden md:block'
-          } ${isViewer ? 'pointer-events-none opacity-70' : ''}`}
+          } ${isViewer ? 'opacity-80' : ''}`}
         >
           <NotesPanel />
         </aside>
@@ -183,24 +194,14 @@ export function ShareEditorShell({ initialChoreo, role, token, currentUser }: Pr
 }
 
 function useShareAutoSaveIfEditor(role: ShareRole, token: string) {
-  // Always call the hook; pass an empty token for viewer which makes it
-  // a no-op internally.
   useShareAutoSave(role === 'editor' ? token : '');
 }
 
-/**
- * Conditional collab: either subscribes to the realtime channel, or
- * returns empty stubs. We pick the branch deterministically from
- * `enabled`, which comes from props and doesn't change during the
- * component's lifetime, so the rules-of-hooks are preserved.
- */
 function useCollabIfEnabled(
   enabled: boolean,
   choreoId: string,
   currentUser: { email: string; displayName: string } | null,
 ): { peers: CollabUser[]; cursors: Record<string, RemoteCursor> } {
-  // We must always call the same set of hooks. If disabled, we still call
-  // useCollab but with a sentinel user — then ignore its output.
   const fallbackUser = { email: '', displayName: '' };
   const effectiveChoreoId = enabled && currentUser ? choreoId : '';
   const result = useCollab({

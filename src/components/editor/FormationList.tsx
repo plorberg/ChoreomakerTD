@@ -24,6 +24,7 @@ export function FormationList() {
   const dup = useEditorStore((s) => s.duplicateFormation);
   const del = useEditorStore((s) => s.deleteFormation);
   const setTime = useEditorStore((s) => s.setFormationTime);
+  const readOnly = useEditorStore((s) => s.readOnly);
 
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -113,9 +114,11 @@ export function FormationList() {
     <div className="p-3 border-b border-border">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-xs uppercase tracking-wider text-white/50">Formations</h2>
-        <button onClick={add} className="text-accent text-sm hover:underline">
-          + Add
-        </button>
+        {!readOnly && (
+          <button onClick={add} className="text-accent text-sm hover:underline">
+            + Add
+          </button>
+        )}
       </div>
 
       <ol className="space-y-1">
@@ -126,12 +129,12 @@ export function FormationList() {
           return (
             <li
               key={f.id}
-              draggable
-              onDragStart={(e) => handleDragStart(e, f.id)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, idx)}
-              onDragEnd={handleDragEnd}
+              draggable={!readOnly}
+              onDragStart={!readOnly ? (e) => handleDragStart(e, f.id) : undefined}
+              onDragOver={!readOnly ? (e) => handleDragOver(e, idx) : undefined}
+              onDragLeave={!readOnly ? handleDragLeave : undefined}
+              onDrop={!readOnly ? (e) => handleDrop(e, idx) : undefined}
+              onDragEnd={!readOnly ? handleDragEnd : undefined}
               className="relative"
             >
               {showAbove && (
@@ -147,38 +150,44 @@ export function FormationList() {
                 }`}
                 onClick={() => select(f.id)}
               >
-                <span
-                  className="text-white/30 text-xs select-none cursor-grab active:cursor-grabbing"
-                  title="Drag to reorder"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  ⋮⋮
-                </span>
+                {!readOnly && (
+                  <span
+                    className="text-white/30 text-xs select-none cursor-grab active:cursor-grabbing"
+                    title="Drag to reorder"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    ⋮⋮
+                  </span>
+                )}
                 <span className="text-white/40 text-xs w-5 tabular-nums">{idx + 1}</span>
                 <span className="flex-1 truncate text-sm">{f.name}</span>
                 <span className="text-xs text-white/40 tabular-nums">{formatTime(f.timeSec)}</span>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    dup(f.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 text-xs text-white/50 hover:text-white"
-                  title="Duplicate"
-                >
-                  ⎘
-                </button>
+                {!readOnly && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        dup(f.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-xs text-white/50 hover:text-white"
+                      title="Duplicate"
+                    >
+                      ⎘
+                    </button>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm(`Delete "${f.name}"?`)) del(f.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 text-xs text-red-400 hover:text-red-300"
-                  title="Delete"
-                >
-                  ×
-                </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete "${f.name}"?`)) del(f.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-xs text-red-400 hover:text-red-300"
+                      title="Delete"
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
               </div>
               {showBelow && (
                 <div className="absolute -bottom-0.5 left-0 right-0 h-0.5 bg-accent rounded-full pointer-events-none z-10" />

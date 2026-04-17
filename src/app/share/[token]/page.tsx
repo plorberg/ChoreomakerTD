@@ -14,9 +14,6 @@ export default async function SharePage({
   const result = await shareRepo.resolve(token);
   if (!result) notFound();
 
-  // Pick up the current user IF logged in. Anonymous share-link visitors
-  // get no collab presence (per product spec: only registered users
-  // participate in realtime collaboration).
   const supabase = await createClient();
   const {
     data: { user },

@@ -37,6 +37,8 @@ export function EditorShell({ initialChoreo, currentUser }: Props) {
   const setView = useEditorStore((s) => s.setView);
   const showTransitions = useEditorStore((s) => s.showTransitions);
   const setShowTransitions = useEditorStore((s) => s.setShowTransitions);
+  const showDistances = useEditorStore((s) => s.showDistances);
+  const setShowDistances = useEditorStore((s) => s.setShowDistances);
   const dirty = useEditorStore((s) => s.dirty);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('stage');
@@ -47,7 +49,6 @@ export function EditorShell({ initialChoreo, currentUser }: Props) {
 
   useAutoSave();
 
-  // Realtime collaboration: presence + cursors + choreo sync
   const { peers, cursors } = useCollab({
     choreoId: initialChoreo.id,
     currentUser,
@@ -79,6 +80,16 @@ export function EditorShell({ initialChoreo, currentUser }: Props) {
           title="Toggle transition paths between formations"
         >
           Paths
+        </button>
+
+        <button
+          onClick={() => setShowDistances(!showDistances)}
+          className={`px-2 py-1 rounded text-xs ${
+            showDistances ? 'bg-accent/60' : 'bg-border/50 hover:bg-border'
+          }`}
+          title="Show top 3 longest distances per formation in the side panel"
+        >
+          Distances
         </button>
 
         <ChoreoTitle />
@@ -142,7 +153,6 @@ export function EditorShell({ initialChoreo, currentUser }: Props) {
 
       <TransportBar />
 
-      {/* Mobile bottom tabs */}
       <nav className="md:hidden h-12 border-t border-border flex bg-panel">
         {(['list', 'stage', 'notes'] as const).map((tab) => (
           <button
