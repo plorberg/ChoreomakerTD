@@ -174,27 +174,30 @@ export function useAudioEngine() {
 
     (async () => {
       try {
+        // Create the AudioContext but DON'T resume it here. Browsers
+        // block resume() unless it's in response to a user gesture
+        // (like clicking Play). decodeAudioData works fine on a
+        // suspended context. The actual resume() happens in startAt()
+        // which is called from the play effect triggered by user click.
         const ctx = ensureCtx();
-        await ctx.resume();
 
-        // Always resolve through /api/audio-url. It handles:
-        //   - Raw paths ("userId/uuid.mp3") → signs fresh
-        //   - Old signed URLs ("https://...") → extracts raw path, signs fresh
-        // This guarantees share-link visitors get a working URL even if
-        // the stored URL expired months ago.
-        const signRes = await fetch('/api/audio-url', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ path: storagePath }),
-        });
-        let audioUrl = storagePath;
-        if (signRes.ok) {
-          const { url } = await signRes.json();
-          if (url) audioUrl = url;
+        // Build the public audio URL. storagePath can be:
+        //   1. Raw path: "userId/uuid.mp3"
+        //   2. Legacy signed URL: "https://xxx.supabase.co/storage/v1/object/sign/audio/userId/uuid.mp3?token=..."
+        // In both cases we build a public URL since the bucket is now public.
+        const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        let rawPath = storagePath;
+        if (rawPath.startsWith('http')) {
+          // Extract raw path from signed or public Supabase URL
+          const m = rawPath.match(/\/storage\/v1\/object\/(?:sign|public)\/audio\/(.+?)(?:\?|$)/);
+          if (m?.[1]) {
+            rawPath = decodeURIComponent(m[1]);
+          }
         }
+        const audioUrl = `${base}/storage/v1/object/public/audio/${rawPath}`;
 
         const res = await fetch(audioUrl);
-        if (!res.ok) throw new Error(`Audio fetch failed: ${res.status}`);
+        if (!res.ok) throw new Error(`Audio fetch failed: ${res.status} for ${audioUrl}`);
 
         const arrayBuf = await res.arrayBuffer();
         const decoded = await ctx.decodeAudioData(arrayBuf.slice(0));

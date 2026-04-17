@@ -8,12 +8,12 @@ import { createClient } from '@/lib/supabase/client';
 /**
  * Audio upload flow:
  *   1. User picks a file
- *   2. We probe the file for duration via a hidden <audio> element
+ *   2. We probe the file for duration via decodeAudioData (Web Audio API)
  *   3. Upload to Supabase Storage bucket 'audio' at ${ownerId}/${uuid}.${ext}
- *   4. Create a signed URL (7 days) and store it on choreo.audio.storagePath
+ *   4. Store the raw storage path on choreo.audio.storagePath
  *
- * Signed URLs keep files private while still playable in the browser.
- * When the URL expires, the editor just re-signs on next load.
+ * The audio bucket is public, so the path is converted to a direct public
+ * URL at playback time. No signing, no expiration, no CORS issues.
  */
 export function AudioPanel() {
   const choreo = useEditorStore((s) => s.choreo);
