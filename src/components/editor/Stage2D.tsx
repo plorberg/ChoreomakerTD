@@ -820,7 +820,7 @@ export function Stage2D({ cursors }: Stage2DProps = {}) {
                     x={0}
                     y={4}
                     textAnchor="middle"
-                    fontSize={role === 'solo' ? 12 : 10}
+                    fontSize={Math.max(6, TOKEN_R * 0.9)}
                     fontWeight="700"
                     fill={isFollower ? performer.color : '#ffffff'}
                     pointerEvents="none"
@@ -831,7 +831,7 @@ export function Stage2D({ cursors }: Stage2DProps = {}) {
                     }}
                   >
                     {label}
-                  </text>
+                  </text> 
                 </g>
                 {/* Rotation handle — only on leader/solo, not follower */}
                 {isSelected && !isPlaying && !isFollower && (
