@@ -17,6 +17,9 @@ export default function LandingPage() {
           Sign in
         </Link>
       </div>
+      <Link href="/help" className="mt-6 text-sm text-white/50 hover:text-white">
+        Documentation &amp; Help &rarr;
+      </Link>
     </main>
   );
 }

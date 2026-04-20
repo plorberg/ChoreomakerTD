@@ -125,8 +125,10 @@ export const useEditorStore = create<EditorState>()(
               }),
             };
             s.choreo = migrated;
-            s.currentFormationId = migrated.formations[0]?.id ?? null;
-            s.playheadSec = migrated.formations[0]?.timeSec ?? 0;
+            const sorted = [...migrated.formations].sort((a, b) => a.timeSec - b.timeSec);
+            const first = sorted[0];
+            s.currentFormationId = first?.id ?? null;
+            s.playheadSec = first?.timeSec ?? 0;
             s.dirty = false;
             s.lastSavedAt = Date.now();
           }),

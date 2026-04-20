@@ -15,7 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen flex flex-col">
       <header className="h-12 border-b border-border flex items-center px-4 justify-between bg-panel">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 md:gap-4">
           <Link href="/dashboard" className="font-semibold">
             Choreo<span className="text-accent">.</span>
           </Link>
@@ -27,6 +27,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               ADMIN
             </Link>
           )}
+          <Link href="/help" className="text-xs text-white/50 hover:text-white">
+            Help
+          </Link>
         </div>
         <form action="/api/auth/signout" method="post">
           <button type="submit" className="text-sm text-white/60 hover:text-white">

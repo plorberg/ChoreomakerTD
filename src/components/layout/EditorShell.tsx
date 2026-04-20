@@ -56,14 +56,15 @@ export function EditorShell({ initialChoreo, currentUser }: Props) {
 
   return (
     <div className="h-[calc(100vh-3rem)] flex flex-col">
-      {/* Toolbar */}
-      <div className="h-10 border-b border-border flex items-center px-3 gap-2 bg-panel">
-        <div className="flex gap-1 text-xs">
+      {/* Toolbar — compact on mobile */}
+      <div className="min-h-[2.5rem] border-b border-border flex flex-wrap items-center px-2 md:px-3 gap-1 md:gap-2 py-1 bg-panel">
+        {/* View toggles */}
+        <div className="flex gap-0.5 md:gap-1 text-xs">
           {(['2d', '3d', 'split'] as const).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`px-2 py-1 rounded uppercase ${
+              className={`px-1.5 md:px-2 py-1 rounded uppercase ${
                 view === v ? 'bg-accent' : 'bg-border/50 hover:bg-border'
               }`}
             >
@@ -72,44 +73,50 @@ export function EditorShell({ initialChoreo, currentUser }: Props) {
           ))}
         </div>
 
-        <button
-          onClick={() => setShowTransitions(!showTransitions)}
-          className={`ml-3 px-2 py-1 rounded text-xs ${
-            showTransitions ? 'bg-accent/60' : 'bg-border/50 hover:bg-border'
-          }`}
-          title="Toggle transition paths between formations"
-        >
-          Paths
-        </button>
-
-        <button
-          onClick={() => setShowDistances(!showDistances)}
-          className={`px-2 py-1 rounded text-xs ${
-            showDistances ? 'bg-accent/60' : 'bg-border/50 hover:bg-border'
-          }`}
-          title="Show top 3 longest distances per formation in the side panel"
-        >
-          Distances
-        </button>
+        {/* Paths + Distances — hidden on mobile */}
+        <div className="hidden md:flex gap-1 ml-1">
+          <button
+            onClick={() => setShowTransitions(!showTransitions)}
+            className={`px-2 py-1 rounded text-xs ${
+              showTransitions ? 'bg-accent/60' : 'bg-border/50 hover:bg-border'
+            }`}
+            title="Toggle transition paths between formations"
+          >
+            Paths
+          </button>
+          <button
+            onClick={() => setShowDistances(!showDistances)}
+            className={`px-2 py-1 rounded text-xs ${
+              showDistances ? 'bg-accent/60' : 'bg-border/50 hover:bg-border'
+            }`}
+            title="Show top 3 longest distances"
+          >
+            Distances
+          </button>
+        </div>
 
         <ChoreoTitle />
 
-        <div className="text-xs text-white/50 flex items-center gap-2">
+        {/* Save indicator — dot on mobile, text on desktop */}
+        <div className="text-xs text-white/50 flex items-center gap-1">
           {dirty ? (
-            <span className="text-amber-300">Unsaved…</span>
-          ) : lastSavedAt ? (
-            <span>
-              Saved · <RelativeTime ms={lastSavedAt} />
-            </span>
+            <span className="text-amber-300">●<span className="hidden md:inline ml-1">Unsaved…</span></span>
           ) : (
-            <span>Saved</span>
+            <>
+              <span className="text-green-400">●</span>
+              <span className="hidden md:inline">
+                {lastSavedAt ? <RelativeTime ms={lastSavedAt} /> : 'Saved'}
+              </span>
+            </>
           )}
-          <span className="text-white/30">· ⌘S</span>
         </div>
 
-        <div className="ml-2 pl-2 border-l border-border">
-          <PresenceAvatars peers={peers} />
-        </div>
+        {/* Presence avatars — desktop only */}
+        {peers.length > 0 && (
+          <div className="hidden md:block ml-1 pl-1 border-l border-border">
+            <PresenceAvatars peers={peers} />
+          </div>
+        )}
       </div>
 
       {/* Main area */}
@@ -153,16 +160,21 @@ export function EditorShell({ initialChoreo, currentUser }: Props) {
 
       <TransportBar />
 
+      {/* Mobile bottom tabs — German labels */}
       <nav className="md:hidden h-12 border-t border-border flex bg-panel">
-        {(['list', 'stage', 'notes'] as const).map((tab) => (
+        {([
+          { key: 'list' as const, label: 'Bilder' },
+          { key: 'stage' as const, label: 'Stage' },
+          { key: 'notes' as const, label: 'Details' },
+        ]).map(({ key, label }) => (
           <button
-            key={tab}
-            onClick={() => setMobilePanel(tab)}
-            className={`flex-1 text-xs capitalize ${
-              mobilePanel === tab ? 'text-accent' : 'text-white/60'
+            key={key}
+            onClick={() => setMobilePanel(key)}
+            className={`flex-1 text-xs font-medium ${
+              mobilePanel === key ? 'text-accent' : 'text-white/60'
             }`}
           >
-            {tab}
+            {label}
           </button>
         ))}
       </nav>
@@ -194,7 +206,7 @@ function ChoreoTitle() {
             setEditing(false);
           }
         }}
-        className="ml-auto text-sm bg-bg border border-accent rounded px-2 py-0.5 outline-none w-64"
+        className="ml-auto text-sm bg-bg border border-accent rounded px-2 py-0.5 outline-none w-32 md:w-64"
       />
     );
   }
@@ -204,7 +216,7 @@ function ChoreoTitle() {
       type="button"
       onClick={() => setEditing(true)}
       title="Click to rename"
-      className="ml-auto text-sm font-medium text-white/80 hover:text-white truncate max-w-xs px-2 py-0.5 rounded hover:bg-border/50"
+      className="ml-auto text-xs md:text-sm font-medium text-white/80 hover:text-white truncate max-w-[100px] md:max-w-xs px-1 md:px-2 py-0.5 rounded hover:bg-border/50"
     >
       {title || 'Untitled'}
     </button>

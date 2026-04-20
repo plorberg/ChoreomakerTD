@@ -20,6 +20,7 @@ export function TransportBar() {
   useAudioEngine();
   usePlaybackTick();
 
+  // Global keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -102,6 +103,7 @@ export function TransportBar() {
 
   return (
     <div className="border-t border-border bg-panel">
+      {/* Timeline scrubber */}
       <div className="relative h-8 px-4 pt-2">
         <div className="relative h-4 bg-bg border border-border rounded">
           {[...choreo.formations]
@@ -125,30 +127,36 @@ export function TransportBar() {
         </div>
       </div>
 
-      <div className="h-14 flex items-center gap-3 px-4">
-        <button
-          onClick={() => useEditorStore.temporal.getState().undo()}
-          className="text-sm text-white/60 hover:text-white w-8 h-8"
-          title="Undo (⌘Z)"
-        >
-          ↶
-        </button>
-        <button
-          onClick={() => useEditorStore.temporal.getState().redo()}
-          className="text-sm text-white/60 hover:text-white w-8 h-8"
-          title="Redo (⌘⇧Z)"
-        >
-          ↷
-        </button>
+      {/* Controls row */}
+      <div className="flex items-center gap-2 md:gap-3 px-2 md:px-4 py-1.5 md:py-2">
+        {/* Undo / Redo — desktop only */}
+        <div className="hidden md:flex gap-1">
+          <button
+            onClick={() => useEditorStore.temporal.getState().undo()}
+            className="text-sm text-white/60 hover:text-white w-8 h-8"
+            title="Undo"
+          >
+            ↶
+          </button>
+          <button
+            onClick={() => useEditorStore.temporal.getState().redo()}
+            className="text-sm text-white/60 hover:text-white w-8 h-8"
+            title="Redo"
+          >
+            ↷
+          </button>
+        </div>
 
+        {/* Play / Pause */}
         <button
           onClick={playing ? pause : play}
-          className="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-lg hover:opacity-90"
+          className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-accent flex items-center justify-center text-base md:text-lg hover:opacity-90 flex-shrink-0"
           aria-label={playing ? 'Pause' : 'Play'}
         >
           {playing ? '⏸' : '▶'}
         </button>
 
+        {/* Playhead slider */}
         <input
           type="range"
           min={0}
@@ -159,50 +167,39 @@ export function TransportBar() {
           onPointerDown={() => setScrubbing(true)}
           onPointerUp={() => setScrubbing(false)}
           onPointerCancel={() => setScrubbing(false)}
-          className="flex-1 accent-accent"
+          className="flex-1 min-w-0 accent-accent"
         />
 
-        <span className="text-xs text-white/60 tabular-nums min-w-[90px] text-right">
-          {formatTime(playhead)} / {formatTime(duration)}
+        {/* Time display */}
+        <span className="text-[10px] md:text-xs text-white/60 tabular-nums whitespace-nowrap">
+          {formatTime(playhead)}<span className="hidden sm:inline"> / {formatTime(duration)}</span>
         </span>
 
-        <div className="flex items-center gap-2 border-l border-border pl-3 ml-1">
-          <button
-            type="button"
-            className="text-[10px] uppercase text-white/40 select-none hover:text-white/70"
-            onClick={() => setPlaybackRate(1)}
-            title="Reset speed to 100%"
-          >
-            Speed
-          </button>
+        {/* Speed input */}
+        <div className="flex items-center gap-1 md:gap-1.5 border-l border-border pl-2">
+          <span className="hidden sm:inline text-[10px] uppercase text-white/40">Speed</span>
           <input
-            type="range"
-            min={0.5}
-            max={1.5}
-            step={0.01}
-            value={playbackRate}
+            type="number"
+            min={50}
+            max={150}
+            step={1}
+            value={speedPercent}
             onChange={(e) => {
-              const next = parseFloat(e.target.value);
-              setPlaybackRate(Math.abs(next - 1) < 0.005 ? 1 : next);
+              const pct = parseInt(e.target.value) || 100;
+              setPlaybackRate(Math.max(0.5, Math.min(1.5, pct / 100)));
             }}
-            className="w-24 accent-accent"
-            title={`${speedPercent}% — click “Speed” to reset to 100%`}
+            className="w-12 md:w-14 bg-bg border border-border rounded px-1 md:px-1.5 py-0.5 text-xs text-center tabular-nums outline-none focus:border-accent"
           />
-          <button
-            type="button"
-            onClick={() => setPlaybackRate(1)}
-            className="text-xs text-white/60 tabular-nums w-12 text-right hover:text-white"
-            title="Reset speed to 100%"
-          >
-            {speedPercent}%
-          </button>
+          <span className="text-[10px] text-white/40">%</span>
         </div>
 
+        {/* PDF Export */}
         <button
           onClick={() => exportChoreoPdf(choreo)}
-          className="text-sm border border-border px-3 py-1.5 rounded hover:border-accent transition"
+          className="flex-shrink-0 text-xs md:text-sm border border-border px-2 md:px-3 py-1 md:py-1.5 rounded hover:border-accent transition"
+          title="Export PDF"
         >
-          Export PDF
+          <span className="hidden sm:inline">Export </span>PDF
         </button>
       </div>
     </div>
